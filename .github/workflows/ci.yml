@@ -1,0 +1,72 @@
+# =============================================================================
+# repos/templates/ci-python.yml v1
+# Standard Python CI workflow template for RepoForge Python packages.
+#
+# Usage:
+#   Copy to .github/workflows/ci.yml in the target repository.
+#   Replace {{RUNNER_LABEL}} with the repo-specific label (e.g. repoforgecore),
+#   or keep [self-hosted, repo-runner] to use the shared org runner pool.
+#
+# Triggers: push / PR to main or develop.
+# Jobs: lint → test (matrix: 3.11, 3.12)
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main, "release/**"]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, "release/**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: [self-hosted, tenetllmadapters]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install linting tools
+        run: pip install ruff
+
+      - name: Ruff — lint
+        run: ruff check src/ tests/
+
+      - name: Ruff — format check
+        run: ruff format --check src/ tests/
+
+  test:
+    name: Test
+    runs-on: [self-hosted, tenetllmadapters]
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install package and dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short --strict-markers
+
+      - name: Upload coverage (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: .coverage
+          if-no-files-found: ignore

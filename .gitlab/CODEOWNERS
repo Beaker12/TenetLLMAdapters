@@ -1,0 +1,9 @@
+# CUSTOMIZE: Replace OWNER with the team or individual responsible for code review.
+# Format: path/pattern  @username-or-group
+#
+# Examples:
+#   *               @your-username
+#   src/            @your-username
+#   docs/           @docs-team
+
+*       @OWNER
