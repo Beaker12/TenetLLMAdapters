@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tenet-llm-adapters"
+version = "1.0.0"
+description = "Cloud LLM adapters for the Tenet platform (Anthropic, OpenAI, Google, Cohere)"
+readme = "README.md"
+license = {text = "AGPL-3.0-only"}
+requires-python = ">=3.11"
+authors = [{name = "Beaker12"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+
+dependencies = [
+    "tenetcore>=1.0.0,<2.0",
+    "httpx>=0.27,<1.0",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40,<1.0"]
+openai = ["openai>=1.50,<2.0"]
+google = ["httpx>=0.27,<1.0"]
+cohere = ["httpx>=0.27,<1.0"]
+all = [
+    "tenet-llm-adapters[anthropic]",
+    "tenet-llm-adapters[openai]",
+]
+dev = [
+    "pytest>=8.0,<9.0",
+    "pytest-asyncio>=0.23,<1.0",
+    "respx>=0.21,<1.0",
+    "ruff>=0.3,<1.0",
+]
+
+[project.entry-points."tenet.llm_adapters"]
+anthropic = "tenet_llm_adapters._anthropic:AnthropicAdapter"
+openai-compatible = "tenet_llm_adapters._openai:OpenAIAdapter"
+google = "tenet_llm_adapters._google:GoogleAdapter"
+cohere = "tenet_llm_adapters._cohere:CohereAdapter"
+
+[project.entry-points."tenet.module_declarations"]
+tenet_llm_adapters = "tenet_llm_adapters.declaration:get_declaration"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "TCH"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.uv.sources]
+tenetcore = { path = "../TenetCore", editable = true }
