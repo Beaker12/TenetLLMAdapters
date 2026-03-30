@@ -1,8 +1,0 @@
-[tenet.llm_adapters]
-anthropic = tenet_llm_adapters._anthropic:AnthropicAdapter
-cohere = tenet_llm_adapters._cohere:CohereAdapter
-google = tenet_llm_adapters._google:GoogleAdapter
-openai-compatible = tenet_llm_adapters._openai:OpenAIAdapter
-
-[tenet.module_declarations]
-tenet_llm_adapters = tenet_llm_adapters.declaration:get_declaration
