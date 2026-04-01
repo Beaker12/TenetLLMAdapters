@@ -33,6 +33,8 @@ async def test_cohere_list_models_uses_name_field_for_model_id() -> None:
     assert models[0].model_id == "command-r-plus"
     assert models[0].provider == "cohere"
     assert models[0].context_window == 128000
+    assert models[0].provider_metadata.get("provider") == "cohere"
+    assert models[0].provider_metadata.get("raw_model", {}).get("name") == "command-r-plus"
 
 
 @respx.mock

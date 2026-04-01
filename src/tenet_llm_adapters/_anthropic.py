@@ -8,6 +8,23 @@ from typing import TYPE_CHECKING, Any
 import anthropic
 from tenetcore.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
 
+_ANTHROPIC_MODEL_ALIASES: dict[str, str] = {
+    "claude-3-haiku": "claude-3-haiku-20240307",
+    "claude-3-sonnet": "claude-3-sonnet-20240229",
+    "claude-3-opus": "claude-3-opus-20240229",
+    "claude-3-5-haiku": "claude-3-5-haiku-20241022",
+    "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
+}
+
+_ANTHROPIC_BATCH_MODELS: frozenset[str] = frozenset({
+    "claude-3-7-sonnet-20250219",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku-20241022",
+    "claude-3-opus-20240229",
+    "claude-3-sonnet-20240229",
+    "claude-3-haiku-20240307",
+})
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
@@ -33,13 +50,69 @@ class AnthropicAdapter:
             base_url=config.get("base_url"),
         )
 
+    @staticmethod
+    def _normalize_model_name(model: str) -> str:
+        """Map legacy aliases to Anthropic versioned model IDs."""
+        return _ANTHROPIC_MODEL_ALIASES.get(model, model)
+
+    @staticmethod
+    def _to_plain_dict(value: Any) -> dict[str, Any]:
+        """Best-effort conversion of SDK objects to plain dicts."""
+        if isinstance(value, dict):
+            return dict(value)
+        for attr in ("model_dump", "to_dict"):
+            fn = getattr(value, attr, None)
+            if callable(fn):
+                try:
+                    data = fn()
+                    if isinstance(data, dict):
+                        return dict(data)
+                except Exception:  # noqa: BLE001
+                    pass
+        if hasattr(value, "__dict__"):
+            data = getattr(value, "__dict__", None)
+            if isinstance(data, dict):
+                return {k: v for k, v in data.items() if not k.startswith("_")}
+        return {}
+
+    @staticmethod
+    def _capability_supported(capabilities: dict[str, Any], key: str) -> bool | None:
+        """Return capability support state from Anthropic capability objects."""
+        raw = capabilities.get(key)
+        if isinstance(raw, dict):
+            supported = raw.get("supported")
+            return bool(supported) if isinstance(supported, bool) else None
+        if isinstance(raw, bool):
+            return raw
+        return None
+
     async def list_models(self) -> list[DiscoveredModel]:
         """List available models from Anthropic beta models endpoint."""
         from tenetcore.llm import DiscoveredModel
 
         result: list[DiscoveredModel] = []
         async for m in await self._client.models.list():
-            caps = getattr(m, "capabilities", None)
+            raw_model = self._to_plain_dict(m)
+            raw_caps = raw_model.get("capabilities") if isinstance(raw_model, dict) else None
+            capabilities = raw_caps if isinstance(raw_caps, dict) else {}
+
+            supports_batch = self._capability_supported(capabilities, "batch")
+            supports_vision = self._capability_supported(capabilities, "image_input")
+            supports_reasoning = self._capability_supported(capabilities, "thinking")
+
+            if supports_batch is None:
+                supports_batch = m.id in _ANTHROPIC_BATCH_MODELS
+
+            if supports_vision is None:
+                caps_obj = getattr(m, "capabilities", None)
+                val = getattr(caps_obj, "image_input", None) if caps_obj else None
+                supports_vision = val if isinstance(val, bool) else None
+
+            if supports_reasoning is None:
+                caps_obj = getattr(m, "capabilities", None)
+                val = getattr(caps_obj, "thinking", None) if caps_obj else None
+                supports_reasoning = val if isinstance(val, bool) else None
+
             result.append(
                 DiscoveredModel(
                     model_id=m.id,
@@ -49,12 +122,14 @@ class AnthropicAdapter:
                     max_output_tokens=getattr(m, "max_tokens", None),
                     supports_tools=True,
                     supports_streaming=True,
-                    supports_vision=getattr(caps, "image_input", None)
-                    if caps
-                    else None,
-                    supports_reasoning=getattr(caps, "thinking", None)
-                    if caps
-                    else None,
+                    supports_vision=supports_vision,
+                    supports_reasoning=supports_reasoning,
+                    supports_batch=supports_batch,
+                    provider_metadata={
+                        "provider": "anthropic",
+                        "raw_model": raw_model,
+                        "capabilities": capabilities,
+                    },
                 )
             )
         return result
@@ -70,6 +145,7 @@ class AnthropicAdapter:
         stop_sequences: list[str] | None = None,
     ) -> LLMResponse:
         """Generate response via Anthropic Messages API."""
+        model = self._normalize_model_name(model)
         system_prompt, api_messages, api_tools = self._build_api_payload(
             messages, tools
         )
@@ -121,6 +197,7 @@ class AnthropicAdapter:
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
     ) -> AsyncIterator[LLMChunk]:
+        model = self._normalize_model_name(model)
         system_prompt, api_messages, api_tools = self._build_api_payload(
             messages, tools
         )
@@ -159,6 +236,7 @@ class AnthropicAdapter:
         tools: list[ToolDef] | None = None,
     ) -> int:
         """Count tokens server-side via Anthropic Token Counting API."""
+        model = self._normalize_model_name(model)
         system_prompt, api_messages, api_tools = self._build_api_payload(
             messages, tools
         )

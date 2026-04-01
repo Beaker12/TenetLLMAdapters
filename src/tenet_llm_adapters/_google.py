@@ -58,6 +58,12 @@ class GoogleAdapter:
                     supports_streaming="streamGenerateContent" in methods,
                     supports_vision=None,
                     supports_reasoning=None,
+                    supports_batch=False,
+                    provider_metadata={
+                        "provider": "google",
+                        "raw_model": m,
+                        "supported_generation_methods": methods,
+                    },
                 )
             )
         return result

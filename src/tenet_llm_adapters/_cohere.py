@@ -56,6 +56,12 @@ class CohereAdapter:
                     context_window=m.get("context_length"),
                     supports_tools="chat" in endpoints,
                     supports_streaming="chat" in endpoints,
+                    supports_batch=False,
+                    provider_metadata={
+                        "provider": "cohere",
+                        "raw_model": m,
+                        "endpoints": endpoints,
+                    },
                 )
             )
         return result

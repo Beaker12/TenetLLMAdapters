@@ -9,7 +9,7 @@ description = "Cloud LLM adapters for the Tenet platform (Anthropic, OpenAI, Goo
 readme = "README.md"
 license = {text = "AGPL-3.0-only"}
 requires-python = ">=3.11"
-authors = [{name = "Beaker12"}]
+authors = [{name = "Stuart W. Parkhurst"}]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

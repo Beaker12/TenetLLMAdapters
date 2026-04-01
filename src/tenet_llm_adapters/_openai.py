@@ -5,6 +5,13 @@ from __future__ import annotations
 import json
 import logging
 from typing import TYPE_CHECKING, Any
+_OPENAI_BATCH_MODELS: frozenset[str] = frozenset({
+    "gpt-4o", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06",
+    "gpt-4o-mini", "gpt-4o-mini-2024-07-18",
+    "gpt-3.5-turbo", "gpt-3.5-turbo-0125",
+    "gpt-4-turbo", "gpt-4-turbo-preview",
+    "o3-mini",
+})
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -34,6 +41,26 @@ class OpenAIAdapter:
             base_url=config.get("base_url"),
         )
 
+    @staticmethod
+    def _to_plain_dict(value: Any) -> dict[str, Any]:
+        """Best-effort conversion of SDK objects to plain dicts."""
+        if isinstance(value, dict):
+            return dict(value)
+        for attr in ("model_dump", "to_dict"):
+            fn = getattr(value, attr, None)
+            if callable(fn):
+                try:
+                    data = fn()
+                    if isinstance(data, dict):
+                        return dict(data)
+                except Exception:  # noqa: BLE001
+                    pass
+        if hasattr(value, "__dict__"):
+            data = getattr(value, "__dict__", None)
+            if isinstance(data, dict):
+                return {k: v for k, v in data.items() if not k.startswith("_")}
+        return {}
+
     async def list_models(self) -> list[DiscoveredModel]:
         """List available models from the OpenAI-compatible /v1/models endpoint."""
         from tenetcore.llm import DiscoveredModel
@@ -43,10 +70,16 @@ class OpenAIAdapter:
         for m in models.data:
             if not getattr(m, "id", None):
                 continue
+            raw_model = self._to_plain_dict(m)
             result.append(
                 DiscoveredModel(
                     model_id=m.id,
                     provider="openai-compatible",
+                    supports_batch=m.id in _OPENAI_BATCH_MODELS,
+                    provider_metadata={
+                        "provider": "openai-compatible",
+                        "raw_model": raw_model,
+                    },
                 )
             )
         return result
@@ -228,7 +261,16 @@ class OpenAIAdapter:
         )
 
     def _parse_response(self, response: Any, model: str) -> LLMResponse:
-        choice = response.choices[0]
+        choices = getattr(response, "choices", None)
+        if not choices:
+            payload = self._to_plain_dict(response)
+            summary = json.dumps(payload, default=str)[:500] if payload else repr(response)
+            raise RuntimeError(
+                "OpenAI-compatible response did not include any choices "
+                f"for model '{model}': {summary}"
+            )
+
+        choice = choices[0]
         msg = choice.message
         tool_calls: list[ToolCall] = []
 

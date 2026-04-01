@@ -41,6 +41,8 @@ async def test_google_list_models_maps_input_token_limit() -> None:
     assert models[0].provider == "google"
     assert models[0].context_window == 2097152
     assert models[0].supports_streaming is True
+    assert models[0].provider_metadata.get("provider") == "google"
+    assert models[0].provider_metadata.get("raw_model", {}).get("name") == "models/gemini-1.5-pro"
 
 
 @respx.mock
