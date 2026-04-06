@@ -8,14 +8,6 @@ from typing import TYPE_CHECKING, Any
 import anthropic
 from tenetcore.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
 
-_ANTHROPIC_MODEL_ALIASES: dict[str, str] = {
-    "claude-3-haiku": "claude-3-haiku-20240307",
-    "claude-3-sonnet": "claude-3-sonnet-20240229",
-    "claude-3-opus": "claude-3-opus-20240229",
-    "claude-3-5-haiku": "claude-3-5-haiku-20241022",
-    "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
-}
-
 _ANTHROPIC_BATCH_MODELS: frozenset[str] = frozenset({
     "claude-3-7-sonnet-20250219",
     "claude-3-5-sonnet-20241022",
@@ -49,11 +41,6 @@ class AnthropicAdapter:
             api_key=config.get("api_key", ""),
             base_url=config.get("base_url"),
         )
-
-    @staticmethod
-    def _normalize_model_name(model: str) -> str:
-        """Map legacy aliases to Anthropic versioned model IDs."""
-        return _ANTHROPIC_MODEL_ALIASES.get(model, model)
 
     @staticmethod
     def _to_plain_dict(value: Any) -> dict[str, Any]:
@@ -145,7 +132,6 @@ class AnthropicAdapter:
         stop_sequences: list[str] | None = None,
     ) -> LLMResponse:
         """Generate response via Anthropic Messages API."""
-        model = self._normalize_model_name(model)
         system_prompt, api_messages, api_tools = self._build_api_payload(
             messages, tools
         )
@@ -197,7 +183,6 @@ class AnthropicAdapter:
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
     ) -> AsyncIterator[LLMChunk]:
-        model = self._normalize_model_name(model)
         system_prompt, api_messages, api_tools = self._build_api_payload(
             messages, tools
         )
@@ -236,7 +221,6 @@ class AnthropicAdapter:
         tools: list[ToolDef] | None = None,
     ) -> int:
         """Count tokens server-side via Anthropic Token Counting API."""
-        model = self._normalize_model_name(model)
         system_prompt, api_messages, api_tools = self._build_api_payload(
             messages, tools
         )

@@ -47,26 +47,3 @@ async def test_list_models_maps_beta_fields() -> None:
     assert models[0].provider_metadata.get("provider") == "anthropic"
     assert "raw_model" in models[0].provider_metadata
 
-
-async def test_generate_normalizes_legacy_model_alias() -> None:
-    mock_client = MagicMock()
-    mock_client.messages = MagicMock()
-    mock_client.messages.create = AsyncMock(
-        return_value=SimpleNamespace(
-            content=[SimpleNamespace(type="text", text="ok")],
-            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
-            stop_reason="end_turn",
-            id="req_test",
-        )
-    )
-
-    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
-        adapter = AnthropicAdapter(api_key="test-key")
-
-    await adapter.generate(
-        messages=[SimpleNamespace(role="user", content="hi")],
-        model="claude-3-haiku",
-    )
-
-    kwargs = mock_client.messages.create.await_args.kwargs
-    assert kwargs["model"] == "claude-3-haiku-20240307"

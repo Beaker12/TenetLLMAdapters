@@ -178,7 +178,7 @@ class OpenAIAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
+            max_tokens: int = 16384,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
     ) -> AsyncIterator[LLMChunk]:
@@ -238,14 +238,26 @@ class OpenAIAdapter:
 
         logger.debug("OpenAI streaming call: model=%s", model)
         last_chunk: Any = None
+        # Track reasoning_content separately for thinking models (e.g., Qwen3).
+        # Only fall back to it if the model emitted zero content tokens (e.g. when
+        # max_tokens is exhausted mid-thinking-chain).
+        reasoning_text = ""
+        got_content = False
         async for chunk in await self._client.chat.completions.create(**kwargs):
             last_chunk = chunk
             if not chunk.choices:
                 continue
-            delta_text = chunk.choices[0].delta.content or ""
+            delta_obj = chunk.choices[0].delta
+            delta_text = delta_obj.content or ""
+            reasoning_delta = getattr(delta_obj, "reasoning_content", None) or ""
             if delta_text:
+                got_content = True
                 yield LLMChunk(delta=delta_text)
-
+            elif reasoning_delta:
+                reasoning_text += reasoning_delta
+        if not got_content and reasoning_text:
+            # Fallback: model exhausted tokens during reasoning with no content yield.
+            yield LLMChunk(delta=reasoning_text)
         usage = getattr(last_chunk, "usage", None) if last_chunk is not None else None
         finish_reason = (
             last_chunk.choices[0].finish_reason
