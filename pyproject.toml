@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "tenetcore>=1.0.0,<2.0",
+    "tenet-core>=1.0.0,<2.0",
     "httpx>=0.27,<1.0",
 ]
 
@@ -67,4 +67,4 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.uv.sources]
-tenetcore = { path = "../TenetCore", editable = true }
+tenet-core = { path = "../TenetCore", editable = true }

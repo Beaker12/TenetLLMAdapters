@@ -6,12 +6,12 @@ import json
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from tenetcore.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
+from tenet_core.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from tenetcore.llm import DiscoveredModel
+    from tenet_core.llm import DiscoveredModel
 
 _BASE = "https://generativelanguage.googleapis.com/v1beta"
 
@@ -32,7 +32,7 @@ class GoogleAdapter:
 
     async def list_models(self) -> list[DiscoveredModel]:
         """List available models from the Google Generative Language API."""
-        from tenetcore.llm import DiscoveredModel
+        from tenet_core.llm import DiscoveredModel
 
         url = f"{self._base}/models?key={self._api_key}"
         async with httpx.AsyncClient() as client:

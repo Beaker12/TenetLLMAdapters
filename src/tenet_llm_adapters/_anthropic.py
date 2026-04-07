@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import anthropic
-from tenetcore.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
+from tenet_core.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
 
 _ANTHROPIC_BATCH_MODELS: frozenset[str] = frozenset({
     "claude-3-7-sonnet-20250219",
@@ -20,7 +20,7 @@ _ANTHROPIC_BATCH_MODELS: frozenset[str] = frozenset({
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from tenetcore.llm import DiscoveredModel
+    from tenet_core.llm import DiscoveredModel
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class AnthropicAdapter:
 
     async def list_models(self) -> list[DiscoveredModel]:
         """List available models from Anthropic beta models endpoint."""
-        from tenetcore.llm import DiscoveredModel
+        from tenet_core.llm import DiscoveredModel
 
         result: list[DiscoveredModel] = []
         async for m in await self._client.models.list():

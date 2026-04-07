@@ -11,6 +11,14 @@ live model discovery:
 - `google` -> `GoogleAdapter`
 - `cohere` -> `CohereAdapter`
 
+## Platform Context
+
+- **Requirements:** [SRS_TENETLLMADAPTERS](../TenetEGRF/docs/requirements/components/SRS_TENETLLMADAPTERS.md)
+- **Architecture:** [ARCH_TENETLLMADAPTERS](../TenetEGRF/docs/architecture/ARCH_TENETLLMADAPTERS.md)
+- **Realization:** [PLAN_TENETLLMADAPTERS](../TenetEGRF/docs/realization/PLAN_TENETLLMADAPTERS.md)
+- **Verification:** [VER_TENET_LLM_ADAPTERS](../TenetEGRF/docs/verification/VER_TENET_LLM_ADAPTERS.md)
+- **Governance:** [TenetOS](../TenetOS/README.md)
+
 ## Install
 
 Base install includes no cloud SDK dependencies:

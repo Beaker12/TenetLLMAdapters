@@ -16,10 +16,10 @@ _OPENAI_BATCH_MODELS: frozenset[str] = frozenset({
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from tenetcore.llm import DiscoveredModel
+    from tenet_core.llm import DiscoveredModel
 
 import openai
-from tenetcore.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
+from tenet_core.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class OpenAIAdapter:
 
     async def list_models(self) -> list[DiscoveredModel]:
         """List available models from the OpenAI-compatible /v1/models endpoint."""
-        from tenetcore.llm import DiscoveredModel
+        from tenet_core.llm import DiscoveredModel
 
         result: list[DiscoveredModel] = []
         models = await self._client.models.list()

@@ -6,12 +6,12 @@ import json
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from tenetcore.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
+from tenet_core.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from tenetcore.llm import DiscoveredModel
+    from tenet_core.llm import DiscoveredModel
 
 _BASE = "https://api.cohere.com"
 
@@ -35,7 +35,7 @@ class CohereAdapter:
 
     async def list_models(self) -> list[DiscoveredModel]:
         """List available models from the Cohere v2 models endpoint."""
-        from tenetcore.llm import DiscoveredModel
+        from tenet_core.llm import DiscoveredModel
 
         url = f"{self._base}/v2/models"
         async with httpx.AsyncClient() as client:

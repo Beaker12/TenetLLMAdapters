@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tenetcore.config.declarations import ModuleDeclaration, TunableDeclaration
+from tenet_core.config.declarations import ModuleDeclaration, TunableDeclaration
 
 _MODULE_ID = "tenet_llm_adapters"
 _MODULE_VERSION = "1.0.0"
@@ -15,5 +15,7 @@ def get_declaration() -> ModuleDeclaration:
     return ModuleDeclaration(
         module_id=_MODULE_ID,
         module_version=_MODULE_VERSION,
+        module_category="core",
+        required=True,
         tunables=_TUNABLES,
     )
