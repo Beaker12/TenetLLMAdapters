@@ -6,3 +6,30 @@ __pycache__/
 *.pyc
 
 *.egg-info/
+
+# Common generated artifacts
+venv/
+*.py[cod]
+.coverage*
+htmlcov/
+.tox/
+.nox/
+dist/
+build/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+*.o
+*.so
+*.dylib
+*.dll
+*.a
+*.exe
+*.out
+*.class
+*.jar
+*.war
+tmp/
+temp/
