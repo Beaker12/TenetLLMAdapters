@@ -297,11 +297,14 @@ class AnthropicAdapter:
 
     def _parse_response(self, response: Any, model: str) -> LLMResponse:
         content_parts: list[str] = []
+        thinking_parts: list[str] = []
         tool_calls: list[ToolCall] = []
 
         for block in response.content:
             if block.type == "text":
                 content_parts.append(block.text)
+            elif block.type == "thinking":
+                thinking_parts.append(getattr(block, "thinking", "") or "")
             elif block.type == "tool_use":
                 tool_calls.append(
                     ToolCall(
@@ -311,12 +314,20 @@ class AnthropicAdapter:
                     )
                 )
 
+        usage = response.usage
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+
         return LLMResponse(
             content="\n".join(content_parts),
             tool_calls=tool_calls,
             model=model,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
             stop_reason=response.stop_reason or "end_turn",
             request_id=getattr(response, "id", "") or "",
+            thinking_content="\n".join(thinking_parts),
+            thinking_tokens=0,  # Anthropic doesn't report thinking token count separately
+            cache_creation_tokens=cache_creation,
+            cache_read_tokens=cache_read,
         )

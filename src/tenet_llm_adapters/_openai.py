@@ -303,6 +303,17 @@ class OpenAIAdapter:
                 )
 
         usage = response.usage
+        # Extract reasoning/thinking tokens if available (e.g. o1, Qwen3).
+        reasoning_tokens = 0
+        cached_tokens = 0
+        if usage:
+            completion_details = getattr(usage, "completion_tokens_details", None)
+            if completion_details:
+                reasoning_tokens = getattr(completion_details, "reasoning_tokens", 0) or 0
+            prompt_details = getattr(usage, "prompt_tokens_details", None)
+            if prompt_details:
+                cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
+
         return LLMResponse(
             content=msg.content or "",
             tool_calls=tool_calls,
@@ -311,4 +322,6 @@ class OpenAIAdapter:
             output_tokens=usage.completion_tokens if usage else 0,
             stop_reason=choice.finish_reason or "stop",
             request_id=getattr(response, "id", "") or "",
+            thinking_tokens=reasoning_tokens,
+            cache_read_tokens=cached_tokens,
         )

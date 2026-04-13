@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import respx
 from httpx import Response
-from tenetcore.llm.client import Message
+from tenet_core.llm.client import Message
 
 from tenet_llm_adapters import GoogleAdapter
 
