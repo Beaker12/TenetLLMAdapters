@@ -153,7 +153,7 @@ class AnthropicAdapter:
         response = await self._client.messages.create(**kwargs)
         return self._parse_response(response, model)
 
-    async def stream(
+    def stream(
         self,
         messages: list[Message],
         model: str,
@@ -202,8 +202,17 @@ class AnthropicAdapter:
 
         logger.debug("Anthropic streaming call: model=%s", model)
         async with self._client.messages.stream(**kwargs) as stream:
-            async for text in stream.text_stream:
-                yield LLMChunk(delta=text)
+            async for event in stream:
+                event_type = type(event).__name__
+                if event_type == "ContentBlockDeltaEvent":
+                    delta = getattr(event, "delta", None)
+                    if delta is None:
+                        continue
+                    delta_type = getattr(delta, "type", None)
+                    if delta_type == "text_delta":
+                        yield LLMChunk(delta=delta.text or "")
+                    elif delta_type == "thinking_delta":
+                        yield LLMChunk(thinking_delta=delta.thinking or "")
             final = await stream.get_final_message()
             yield LLMChunk(
                 delta="",

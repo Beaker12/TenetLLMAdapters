@@ -48,3 +48,50 @@ async def test_generate_raises_runtime_error_when_choices_missing() -> None:
             [SimpleNamespace(role="user", content="hello")],
             "qwen/test-model",
         )
+
+
+async def test_stream_terminal_chunk_includes_reasoning_tokens() -> None:
+    async def _fake_stream():
+        yield SimpleNamespace(
+            id="chunk-1",
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="hello", reasoning_content=""),
+                    finish_reason=None,
+                )
+            ],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            id="chunk-2",
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="", reasoning_content=""),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(
+                prompt_tokens=5267,
+                completion_tokens=99,
+                completion_tokens_details=SimpleNamespace(reasoning_tokens=98),
+            ),
+        )
+
+    mock_client = MagicMock()
+    mock_client.chat = MagicMock()
+    mock_client.chat.completions = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=_fake_stream())
+
+    with patch("openai.AsyncOpenAI", return_value=mock_client):
+        adapter = OpenAIAdapter(api_key="test-key")
+
+    chunks = []
+    async for chunk in adapter.stream(
+        [SimpleNamespace(role="user", content="hello")],
+        "qwen/test-model",
+    ):
+        chunks.append(chunk)
+
+    assert chunks[-1].input_tokens == 5267
+    assert chunks[-1].output_tokens == 99
+    assert chunks[-1].thinking_tokens == 98
