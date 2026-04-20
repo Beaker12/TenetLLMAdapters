@@ -47,3 +47,48 @@ async def test_list_models_maps_beta_fields() -> None:
     assert models[0].provider_metadata.get("provider") == "anthropic"
     assert "raw_model" in models[0].provider_metadata
 
+
+async def test_generate_falls_back_to_streaming_for_long_requests() -> None:
+    usage = SimpleNamespace(
+        input_tokens=321,
+        output_tokens=123,
+        cache_creation_input_tokens=0,
+        cache_read_input_tokens=0,
+    )
+    final_message = SimpleNamespace(
+        content=[SimpleNamespace(type="text", text="streamed final response")],
+        usage=usage,
+        stop_reason="end_turn",
+        id="req-stream-1",
+    )
+
+    stream_cm = AsyncMock()
+    stream_cm.__aenter__.return_value = stream_cm
+    stream_cm.__aexit__.return_value = False
+    stream_cm.get_final_message = AsyncMock(return_value=final_message)
+
+    mock_client = MagicMock()
+    mock_client.messages = MagicMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=ValueError(
+            "Streaming is required for operations that may take longer than 10 minutes."
+        )
+    )
+    mock_client.messages.stream = MagicMock(return_value=stream_cm)
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        adapter = AnthropicAdapter(api_key="test-key")
+
+    response = await adapter.generate(
+        [SimpleNamespace(role="user", content="hello")],
+        "claude-sonnet-4-6",
+        max_tokens=64000,
+    )
+
+    assert response.content == "streamed final response"
+    assert response.input_tokens == 321
+    assert response.output_tokens == 123
+    mock_client.messages.create.assert_awaited_once()
+    mock_client.messages.stream.assert_called_once()
+    stream_cm.get_final_message.assert_awaited_once()
+

@@ -25,6 +25,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+_LONG_REQUEST_STREAMING_ERROR = (
+    "Streaming is required for operations that may take longer than 10 minutes."
+)
+
+
 class AnthropicAdapter:
     """Anthropic (Claude) LLM adapter."""
 
@@ -150,8 +155,22 @@ class AnthropicAdapter:
             kwargs["stop_sequences"] = stop_sequences
 
         logger.debug("Anthropic API call: model=%s", model)
-        response = await self._client.messages.create(**kwargs)
+        try:
+            response = await self._client.messages.create(**kwargs)
+        except ValueError as exc:
+            if _LONG_REQUEST_STREAMING_ERROR not in str(exc):
+                raise
+            logger.info(
+                "Anthropic non-streaming request requires streaming; retrying via streaming API | model=%s",
+                model,
+            )
+            response = await self._generate_via_streaming_api(**kwargs)
         return self._parse_response(response, model)
+
+    async def _generate_via_streaming_api(self, **kwargs: Any) -> Any:
+        """Execute a request via Anthropic streaming and return the final message."""
+        async with self._client.messages.stream(**kwargs) as stream:
+            return await stream.get_final_message()
 
     def stream(
         self,
