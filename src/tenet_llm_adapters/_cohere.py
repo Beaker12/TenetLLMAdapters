@@ -6,7 +6,15 @@ import json
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from tenet_core.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
+from tenet_core.llm.client import (
+    LLMChunk,
+    LLMParams,
+    LLMResponse,
+    Message,
+    ToolCall,
+    ToolDef,
+    resolve_params,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -75,15 +83,22 @@ class CohereAdapter:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
+        params: LLMParams | None = None,
     ) -> LLMResponse:
         """Generate a response via Cohere v2 /chat endpoint."""
+        p = resolve_params(
+            params,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop_sequences=stop_sequences,
+        )
         payload = self._build_payload(
             messages,
             model,
             tools,
-            max_tokens,
-            temperature,
-            stop_sequences,
+            p.max_tokens,
+            p.temperature if p.temperature is not None else 0.0,
+            p.stop_sequences,
             stream=False,
         )
         url = f"{self._base}/v2/chat"
@@ -106,18 +121,28 @@ class CohereAdapter:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
+        params: LLMParams | None = None,
     ) -> AsyncIterator[LLMChunk]:
         """Stream response chunks via Cohere v2 /chat with stream=True."""
+        p = resolve_params(
+            params,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop_sequences=stop_sequences,
+        )
         payload = self._build_payload(
             messages,
             model,
             tools,
-            max_tokens,
-            temperature,
-            stop_sequences,
+            p.max_tokens,
+            p.temperature if p.temperature is not None else 0.0,
+            p.stop_sequences,
             stream=True,
         )
         url = f"{self._base}/v2/chat"
+        final_reason = "stop"
+        final_usage: dict[str, Any] = {}
+        request_id = ""
         async with httpx.AsyncClient() as client, client.stream(
             "POST",
             url,
@@ -133,6 +158,7 @@ class CohereAdapter:
                     event = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                request_id = event.get("id") or request_id
                 if event.get("type") == "content-delta":
                     text = (
                         event.get("delta", {})
@@ -141,7 +167,31 @@ class CohereAdapter:
                         .get("text", "")
                     )
                     if text:
-                        yield LLMChunk(delta=text)
+                        yield LLMChunk(delta=text, request_id=request_id)
+                finish_reason = event.get("finish_reason")
+                if not finish_reason and isinstance(event.get("delta"), dict):
+                    finish_reason = event.get("delta", {}).get("finish_reason")
+                if isinstance(finish_reason, str) and finish_reason:
+                    final_reason = finish_reason.lower()
+                usage = event.get("usage")
+                if isinstance(usage, dict) and usage:
+                    final_usage = usage
+
+        billed_units = final_usage.get("billed_units")
+        if isinstance(billed_units, dict):
+            input_tokens = int(billed_units.get("input_tokens") or 0)
+            output_tokens = int(billed_units.get("output_tokens") or 0)
+        else:
+            input_tokens = int(final_usage.get("input_tokens") or 0)
+            output_tokens = int(final_usage.get("output_tokens") or 0)
+
+        yield LLMChunk(
+            delta="",
+            stop_reason=final_reason,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            request_id=request_id,
+        )
 
     def _build_payload(
         self,

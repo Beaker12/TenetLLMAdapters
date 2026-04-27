@@ -74,6 +74,38 @@ class OpenAIAdapter:
                 return {k: v for k, v in data.items() if not k.startswith("_")}
         return {}
 
+    @staticmethod
+    def _normalize_messages(
+        api_messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Reorder and merge system messages to satisfy llama.cpp chat-template rules.
+
+        llama.cpp (and many local-model servers) require the system message to be
+        the very first message in the conversation.  When the agent loop injects
+        context as a mid-conversation system message, the payload arrives here
+        with system messages scattered through the list.  This method collects all
+        system messages, merges their content (newline-separated), and hoists the
+        merged message to index 0.  All other messages remain in their original
+        relative order.  OpenAI-hosted endpoints are not affected because they
+        accept system messages at any position.
+        """
+        system_parts: list[str] = []
+        non_system: list[dict[str, Any]] = []
+        for m in api_messages:
+            if m.get("role") == "system":
+                content = m.get("content") or ""
+                if content:
+                    system_parts.append(content)
+            else:
+                non_system.append(m)
+        if not system_parts:
+            return non_system
+        merged_system: dict[str, Any] = {
+            "role": "system",
+            "content": "\n\n".join(system_parts),
+        }
+        return [merged_system, *non_system]
+
     async def list_models(self) -> list[DiscoveredModel]:
         """List available models from the OpenAI-compatible /v1/models endpoint."""
         from tenet_core.llm import DiscoveredModel
@@ -142,6 +174,7 @@ class OpenAIAdapter:
                     "role": msg.role,
                     "content": msg.content,
                 })
+        api_messages = self._normalize_messages(api_messages)
 
         kwargs: dict[str, Any] = {
             "model": model,
@@ -249,6 +282,8 @@ class OpenAIAdapter:
                     "role": msg.role,
                     "content": msg.content,
                 })
+
+        api_messages = self._normalize_messages(api_messages)
 
         kwargs: dict[str, Any] = {
             "model": model,

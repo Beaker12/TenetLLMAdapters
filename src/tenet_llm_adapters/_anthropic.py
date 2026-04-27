@@ -6,7 +6,15 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import anthropic
-from tenet_core.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
+from tenet_core.llm.client import (
+    LLMChunk,
+    LLMParams,
+    LLMResponse,
+    Message,
+    ToolCall,
+    ToolDef,
+    resolve_params,
+)
 
 _ANTHROPIC_BATCH_MODELS: frozenset[str] = frozenset({
     "claude-3-7-sonnet-20250219",
@@ -135,8 +143,15 @@ class AnthropicAdapter:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
+        params: LLMParams | None = None,
     ) -> LLMResponse:
         """Generate response via Anthropic Messages API."""
+        p = resolve_params(
+            params,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop_sequences=stop_sequences,
+        )
         system_prompt, api_messages, api_tools = self._build_api_payload(
             messages, tools
         )
@@ -144,15 +159,15 @@ class AnthropicAdapter:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": api_messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
+            "max_tokens": p.max_tokens,
+            "temperature": p.temperature if p.temperature is not None else 0.0,
         }
         if system_prompt:
             kwargs["system"] = system_prompt
         if api_tools:
             kwargs["tools"] = api_tools
-        if stop_sequences:
-            kwargs["stop_sequences"] = stop_sequences
+        if p.stop_sequences:
+            kwargs["stop_sequences"] = p.stop_sequences
 
         logger.debug("Anthropic API call: model=%s", model)
         try:
@@ -181,6 +196,7 @@ class AnthropicAdapter:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
+        params: LLMParams | None = None,
     ) -> AsyncIterator[LLMChunk]:
         """Stream response chunks via the Anthropic Messages streaming API."""
         return self._stream_impl(
@@ -190,6 +206,7 @@ class AnthropicAdapter:
             max_tokens=max_tokens,
             temperature=temperature,
             stop_sequences=stop_sequences,
+            params=params,
         )
 
     async def _stream_impl(
@@ -201,7 +218,14 @@ class AnthropicAdapter:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
+        params: LLMParams | None = None,
     ) -> AsyncIterator[LLMChunk]:
+        p = resolve_params(
+            params,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop_sequences=stop_sequences,
+        )
         system_prompt, api_messages, api_tools = self._build_api_payload(
             messages, tools
         )
@@ -209,15 +233,15 @@ class AnthropicAdapter:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": api_messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
+            "max_tokens": p.max_tokens,
+            "temperature": p.temperature if p.temperature is not None else 0.0,
         }
         if system_prompt:
             kwargs["system"] = system_prompt
         if api_tools:
             kwargs["tools"] = api_tools
-        if stop_sequences:
-            kwargs["stop_sequences"] = stop_sequences
+        if p.stop_sequences:
+            kwargs["stop_sequences"] = p.stop_sequences
 
         logger.debug("Anthropic streaming call: model=%s", model)
         async with self._client.messages.stream(**kwargs) as stream:

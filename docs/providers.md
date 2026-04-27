@@ -129,6 +129,8 @@ Hardcoded frozenset `_OPENAI_BATCH_MODELS`:
 | `stream()` | `POST /v1/messages` (stream) | Streaming via `messages.stream()` context manager |
 | `count_tokens()` | `POST /v1/messages/count_tokens` | Server-side token counting |
 
+`generate()` and `stream()` now also accept provider-agnostic `LLMParams` values propagated from TenetCore (`max_tokens`, `temperature`, `stop_sequences`).
+
 ### System Message Handling
 
 System messages are extracted from the message list and passed as the `system` keyword argument to the Messages API — not included in the `messages[]` array.
@@ -207,7 +209,13 @@ API key is passed as `?key=` query parameter on every request.
 
 ### Tool Calling
 
-Tools are sent as `tools[].functionDeclarations[]`. Tool calls in responses are `functionCall` parts. Tool call IDs are synthesized as `call_{function_name}`.
+Tools are sent as `tools[].functionDeclarations[]`. Tool calls in responses are `functionCall` parts. Tool call IDs are synthesized as `call_{function_name}_{index}` to avoid collisions when the same function is called multiple times in one response.
+
+### Streaming Notes
+
+- `stream()` emits incremental `LLMChunk(delta=...)` chunks for content.
+- A terminal chunk is always emitted with `stop_reason`, `input_tokens`, `output_tokens`, and `request_id` (if provided by Google).
+- `generate()` and `stream()` accept `LLMParams` and map to Gemini generation config.
 
 ### DiscoveredModel Fields
 
@@ -258,6 +266,12 @@ API key is sent as `Authorization: Bearer {api_key}` header.
 | `system` | `role: "system"`, `content` as string |
 | `user` | `role: "user"`, `content` as string |
 | `assistant` | `role: "assistant"`, `content[]` with `text` and `tool_use` parts |
+
+### Streaming Notes
+
+- `stream()` emits incremental `LLMChunk(delta=...)` chunks from NDJSON `content-delta` events.
+- A terminal chunk is always emitted with `stop_reason`, `input_tokens`, `output_tokens`, and `request_id` when present.
+- `generate()` and `stream()` accept `LLMParams` and map to `max_tokens`, `temperature`, and `stop_sequences`.
 | `tool` | `role: "tool"`, `content[].tool_result` |
 
 ### Streaming

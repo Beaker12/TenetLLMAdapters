@@ -142,6 +142,8 @@ All adapters implement streaming as async generators yielding `LLMChunk`:
 
 The final chunk always carries usage metadata. OpenAI uses `stream_options={"include_usage": True}` to get usage in the last streamed chunk. Anthropic gets it from `stream.get_final_message()`. Google and Cohere extract it from the last SSE/NDJSON payload.
 
+All adapters accept provider-agnostic `LLMParams` in both `generate()` and `stream()`. Adapters that do not support a parameter ignore it explicitly at the adapter boundary rather than requiring TenetCore call-site branching.
+
 ### OpenAI Reasoning Content Fallback
 
 `OpenAIAdapter._stream_impl` tracks `reasoning_content` deltas separately. If the model emits zero content tokens (e.g., Qwen3 exhausting `max_tokens` during a thinking chain), the collected reasoning text is yielded as a fallback.

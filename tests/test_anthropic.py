@@ -3,6 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from tenet_core.llm.client import LLMParams
+
 from tenet_llm_adapters import AnthropicAdapter
 
 
@@ -91,4 +93,38 @@ async def test_generate_falls_back_to_streaming_for_long_requests() -> None:
     mock_client.messages.create.assert_awaited_once()
     mock_client.messages.stream.assert_called_once()
     stream_cm.get_final_message.assert_awaited_once()
+
+
+async def test_generate_accepts_params() -> None:
+    usage = SimpleNamespace(
+        input_tokens=10,
+        output_tokens=4,
+        cache_creation_input_tokens=0,
+        cache_read_input_tokens=0,
+    )
+    response_obj = SimpleNamespace(
+        content=[SimpleNamespace(type="text", text="ok")],
+        usage=usage,
+        stop_reason="end_turn",
+        id="req-params-1",
+    )
+
+    mock_client = MagicMock()
+    mock_client.messages = MagicMock()
+    mock_client.messages.create = AsyncMock(return_value=response_obj)
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        adapter = AnthropicAdapter(api_key="test-key")
+
+    result = await adapter.generate(
+        [SimpleNamespace(role="user", content="hello")],
+        "claude-sonnet-4-6",
+        params=LLMParams(max_tokens=256, temperature=0.2, stop_sequences=["END"]),
+    )
+
+    assert result.content == "ok"
+    kwargs = mock_client.messages.create.await_args.kwargs
+    assert kwargs["max_tokens"] == 256
+    assert kwargs["temperature"] == 0.2
+    assert kwargs["stop_sequences"] == ["END"]
 

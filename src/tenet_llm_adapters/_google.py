@@ -6,7 +6,15 @@ import json
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from tenet_core.llm.client import LLMChunk, LLMResponse, Message, ToolCall, ToolDef
+from tenet_core.llm.client import (
+    LLMChunk,
+    LLMParams,
+    LLMResponse,
+    Message,
+    ToolCall,
+    ToolDef,
+    resolve_params,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -77,10 +85,21 @@ class GoogleAdapter:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
+        params: LLMParams | None = None,
     ) -> LLMResponse:
         """Generate a response via Gemini generateContent REST endpoint."""
+        p = resolve_params(
+            params,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop_sequences=stop_sequences,
+        )
         payload = self._build_payload(
-            messages, tools, max_tokens, temperature, stop_sequences
+            messages,
+            tools,
+            p.max_tokens,
+            p.temperature if p.temperature is not None else 0.0,
+            p.stop_sequences,
         )
         url = f"{self._base}/models/{model}:generateContent?key={self._api_key}"
         async with httpx.AsyncClient() as client:
@@ -97,15 +116,29 @@ class GoogleAdapter:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
+        params: LLMParams | None = None,
     ) -> AsyncIterator[LLMChunk]:
         """Stream response chunks via Gemini streamGenerateContent endpoint."""
+        p = resolve_params(
+            params,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop_sequences=stop_sequences,
+        )
         payload = self._build_payload(
-            messages, tools, max_tokens, temperature, stop_sequences
+            messages,
+            tools,
+            p.max_tokens,
+            p.temperature if p.temperature is not None else 0.0,
+            p.stop_sequences,
         )
         url = (
             f"{self._base}/models/{model}:streamGenerateContent"
             f"?key={self._api_key}&alt=sse"
         )
+        final_reason = "stop"
+        final_usage: dict[str, Any] = {}
+        request_id = ""
         async with httpx.AsyncClient() as client, client.stream(
             "POST", url, json=payload, timeout=120.0
         ) as resp:
@@ -114,15 +147,31 @@ class GoogleAdapter:
                 if not line.startswith("data:"):
                     continue
                 chunk_data = json.loads(line[5:].strip())
+                request_id = (
+                    chunk_data.get("responseId")
+                    or chunk_data.get("id")
+                    or request_id
+                )
                 text = ""
-                for part in (
-                    chunk_data.get("candidates", [{}])[0]
-                    .get("content", {})
-                    .get("parts", [])
-                ):
+                candidates = chunk_data.get("candidates") or []
+                first_candidate = candidates[0] if candidates else {}
+                for part in (first_candidate.get("content", {}).get("parts", [])):
                     text += part.get("text", "")
                 if text:
-                    yield LLMChunk(delta=text)
+                    yield LLMChunk(delta=text, request_id=request_id)
+                finish_reason = first_candidate.get("finishReason")
+                if isinstance(finish_reason, str) and finish_reason:
+                    final_reason = finish_reason.lower()
+                usage = chunk_data.get("usageMetadata")
+                if isinstance(usage, dict) and usage:
+                    final_usage = usage
+        yield LLMChunk(
+            delta="",
+            stop_reason=final_reason,
+            input_tokens=int(final_usage.get("promptTokenCount") or 0),
+            output_tokens=int(final_usage.get("candidatesTokenCount") or 0),
+            request_id=request_id,
+        )
 
     def _build_payload(
         self,
@@ -197,15 +246,17 @@ class GoogleAdapter:
         content = candidate.get("content", {})
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
+        tool_call_index = 0
 
         for part in content.get("parts", []):
             if "text" in part:
                 text_parts.append(part["text"])
             elif "functionCall" in part:
                 fc = part["functionCall"]
+                tool_call_index += 1
                 tool_calls.append(
                     ToolCall(
-                        id=f"call_{fc['name']}",
+                        id=f"call_{fc['name']}_{tool_call_index}",
                         name=fc["name"],
                         arguments=fc.get("args", {}),
                     )
