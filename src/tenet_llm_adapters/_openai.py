@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 _OPENAI_BATCH_MODELS: frozenset[str] = frozenset({
     "gpt-4o", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06",
     "gpt-4o-mini", "gpt-4o-mini-2024-07-18",
@@ -40,10 +41,32 @@ def _longest_suffix_prefix(text: str, tag: str) -> int:
 class OpenAIAdapter:
     """OpenAI-compatible LLM adapter."""
 
+    @staticmethod
+    def _normalize_base_url(base_url: str | None) -> str | None:
+        if not base_url:
+            return None
+        candidate = base_url.strip().rstrip("/")
+        if not candidate:
+            return None
+        try:
+            parsed = urlparse(candidate)
+            path = (parsed.path or "").rstrip("/")
+            if path.endswith("/v1/models"):
+                path = path[: -len("/models")]
+            elif path.endswith("/models"):
+                path = path[: -len("/models")] or "/v1"
+            elif not path:
+                path = "/v1"
+            normalized = parsed._replace(path=path).geturl().rstrip("/")
+            return normalized or None
+        except Exception:
+            return candidate
+
     def __init__(self, api_key: str, *, base_url: str | None = None) -> None:
         kwargs: dict[str, Any] = {"api_key": api_key}
-        if base_url:
-            kwargs["base_url"] = base_url
+        normalized = self._normalize_base_url(base_url)
+        if normalized:
+            kwargs["base_url"] = normalized
         self._client = openai.AsyncOpenAI(**kwargs)
 
     @classmethod
@@ -139,6 +162,7 @@ class OpenAIAdapter:
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> LLMResponse:
         """Generate response via OpenAI-compatible Chat Completions API."""
         p = resolve_params(params, max_tokens=max_tokens, temperature=temperature, stop_sequences=stop_sequences)
@@ -201,9 +225,16 @@ class OpenAIAdapter:
             ]
         if p.stop_sequences:
             kwargs["stop"] = p.stop_sequences
+        if extra_headers:
+            kwargs["extra_headers"] = dict(extra_headers)
 
         logger.debug("OpenAI API call: model=%s", model)
-        response = await self._client.chat.completions.create(**kwargs)
+        request_client = (
+            self._client.with_options(default_headers=dict(extra_headers))
+            if extra_headers
+            else self._client
+        )
+        response = await request_client.chat.completions.create(**kwargs)
         return self._parse_response(response, model)
 
     def stream(
@@ -217,6 +248,7 @@ class OpenAIAdapter:
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
         thinking_tags: tuple[str, str] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> AsyncIterator[LLMChunk]:
         """Stream response chunks via the OpenAI Chat Completions streaming API.
 
@@ -236,6 +268,7 @@ class OpenAIAdapter:
             stop_sequences=stop_sequences,
             params=params,
             thinking_tags=thinking_tags,
+            extra_headers=extra_headers,
         )
 
     async def _stream_impl(
@@ -249,6 +282,7 @@ class OpenAIAdapter:
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
         thinking_tags: tuple[str, str] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> AsyncIterator[LLMChunk]:
         p = resolve_params(params, max_tokens=max_tokens, temperature=temperature, stop_sequences=stop_sequences)
         effective_temp = p.temperature if p.temperature is not None else 0.0
@@ -312,9 +346,12 @@ class OpenAIAdapter:
             ]
         if p.stop_sequences:
             kwargs["stop"] = p.stop_sequences
+        if extra_headers:
+            kwargs["extra_headers"] = dict(extra_headers)
 
         logger.debug("OpenAI streaming call: model=%s", model)
         last_chunk: Any = None
+        tool_call_parts: dict[int, dict[str, Any]] = {}
         # Track reasoning_content separately for thinking models (e.g., Qwen3).
         # Only fall back to it if the model emitted zero content tokens (e.g. when
         # max_tokens is exhausted mid-thinking-chain).
@@ -326,59 +363,112 @@ class OpenAIAdapter:
         think_start = thinking_tags[0] if thinking_tags else None
         think_end = thinking_tags[1] if thinking_tags else None
 
-        async for chunk in await self._client.chat.completions.create(**kwargs):
-            last_chunk = chunk
-            if not chunk.choices:
-                continue
-            delta_obj = chunk.choices[0].delta
-            delta_text = delta_obj.content or ""
-            # Native reasoning_content field (o1/o3/DeepSeek API).
-            reasoning_delta = getattr(delta_obj, "reasoning_content", None) or ""
-            if reasoning_delta:
-                yield LLMChunk(thinking_delta=reasoning_delta)
-            if delta_text:
-                if think_start and think_end:
-                    # Parse inline thinking tags out of the text stream.
-                    remaining = tag_buffer + delta_text
-                    tag_buffer = ""
-                    while remaining:
-                        if in_thinking_tag:
-                            end_pos = remaining.find(think_end)
-                            if end_pos == -1:
-                                yield LLMChunk(thinking_delta=remaining)
-                                remaining = ""
-                            else:
-                                if end_pos > 0:
-                                    yield LLMChunk(thinking_delta=remaining[:end_pos])
-                                in_thinking_tag = False
-                                remaining = remaining[end_pos + len(think_end):]
-                        else:
-                            start_pos = remaining.find(think_start)
-                            if start_pos == -1:
-                                # Check for partial tag at the end of the chunk.
-                                partial = _longest_suffix_prefix(remaining, think_start)
-                                if partial:
-                                    tag_buffer = remaining[len(remaining) - partial:]
-                                    text_part = remaining[: len(remaining) - partial]
+        request_client = (
+            self._client.with_options(default_headers=dict(extra_headers))
+            if extra_headers
+            else self._client
+        )
+
+        try:
+            async for chunk in await request_client.chat.completions.create(**kwargs):
+                last_chunk = chunk
+                if not chunk.choices:
+                    continue
+                delta_obj = chunk.choices[0].delta
+                delta_tool_calls = getattr(delta_obj, "tool_calls", None) or []
+                if delta_tool_calls:
+                    for tc in delta_tool_calls:
+                        idx_raw = getattr(tc, "index", None)
+                        try:
+                            idx = int(idx_raw) if idx_raw is not None else 0
+                        except (TypeError, ValueError):
+                            idx = 0
+
+                        part = tool_call_parts.setdefault(
+                            idx,
+                            {
+                                "id": "",
+                                "name": "",
+                                "arguments": "",
+                                "type": "function",
+                            },
+                        )
+                        tc_id = getattr(tc, "id", None)
+                        if isinstance(tc_id, str) and tc_id:
+                            part["id"] = tc_id
+                        tc_type = getattr(tc, "type", None)
+                        if isinstance(tc_type, str) and tc_type:
+                            part["type"] = tc_type
+
+                        fn = getattr(tc, "function", None)
+                        if fn is not None:
+                            fn_name = getattr(fn, "name", None)
+                            if isinstance(fn_name, str) and fn_name:
+                                part["name"] = fn_name
+                            fn_args = getattr(fn, "arguments", None)
+                            if isinstance(fn_args, str) and fn_args:
+                                part["arguments"] += fn_args
+
+                delta_text = delta_obj.content or ""
+                # Native reasoning_content field (o1/o3/DeepSeek API).
+                reasoning_delta = getattr(delta_obj, "reasoning_content", None) or ""
+                if reasoning_delta:
+                    yield LLMChunk(thinking_delta=reasoning_delta)
+                if delta_text:
+                    if think_start and think_end:
+                        # Parse inline thinking tags out of the text stream.
+                        remaining = tag_buffer + delta_text
+                        tag_buffer = ""
+                        while remaining:
+                            if in_thinking_tag:
+                                end_pos = remaining.find(think_end)
+                                if end_pos == -1:
+                                    yield LLMChunk(thinking_delta=remaining)
+                                    remaining = ""
                                 else:
-                                    text_part = remaining
-                                if text_part:
-                                    got_content = True
-                                    yield LLMChunk(delta=text_part)
-                                remaining = ""
+                                    if end_pos > 0:
+                                        yield LLMChunk(thinking_delta=remaining[:end_pos])
+                                    in_thinking_tag = False
+                                    remaining = remaining[end_pos + len(think_end):]
                             else:
-                                if start_pos > 0:
-                                    got_content = True
-                                    yield LLMChunk(delta=remaining[:start_pos])
-                                in_thinking_tag = True
-                                remaining = remaining[start_pos + len(think_start):]
-                else:
-                    got_content = True
-                    reasoning_text = reasoning_text  # keep for fallback check
-                    yield LLMChunk(delta=delta_text)
-            elif not reasoning_delta:
-                # No content and no native reasoning — accumulate for fallback.
-                pass
+                                start_pos = remaining.find(think_start)
+                                if start_pos == -1:
+                                    # Check for partial tag at the end of the chunk.
+                                    partial = _longest_suffix_prefix(remaining, think_start)
+                                    if partial:
+                                        tag_buffer = remaining[len(remaining) - partial:]
+                                        text_part = remaining[: len(remaining) - partial]
+                                    else:
+                                        text_part = remaining
+                                    if text_part:
+                                        got_content = True
+                                        yield LLMChunk(delta=text_part)
+                                    remaining = ""
+                                else:
+                                    if start_pos > 0:
+                                        got_content = True
+                                        yield LLMChunk(delta=remaining[:start_pos])
+                                    in_thinking_tag = True
+                                    remaining = remaining[start_pos + len(think_start):]
+                    else:
+                        got_content = True
+                        reasoning_text = reasoning_text  # keep for fallback check
+                        yield LLMChunk(delta=delta_text)
+                elif not reasoning_delta:
+                    # No content and no native reasoning — accumulate for fallback.
+                    pass
+        except json.JSONDecodeError as exc:
+            # Some OpenAI-compatible proxies may emit trailing empty/invalid SSE
+            # frames after valid chunks. If we already captured content or tool
+            # calls, gracefully finish instead of hard-failing the whole turn.
+            if got_content or tool_call_parts:
+                logger.warning(
+                    "OpenAI stream ended with JSON decode error after partial output; "
+                    "continuing with collected chunks: %s",
+                    exc,
+                )
+            else:
+                raise
         # Flush any tag_buffer remainder as plain text (tag never closed).
         if tag_buffer:
             got_content = True
@@ -397,6 +487,29 @@ class OpenAIAdapter:
             completion_details = getattr(usage, "completion_tokens_details", None)
             if completion_details:
                 reasoning_tokens = getattr(completion_details, "reasoning_tokens", 0) or 0
+
+        parsed_tool_calls: list[ToolCall] = []
+        if tool_call_parts:
+            for idx in sorted(tool_call_parts.keys()):
+                part = tool_call_parts[idx]
+                args_raw = part.get("arguments", "") or ""
+                args_obj: dict[str, Any] = {}
+                if isinstance(args_raw, str) and args_raw.strip():
+                    try:
+                        parsed = json.loads(args_raw)
+                        if isinstance(parsed, dict):
+                            args_obj = parsed
+                    except json.JSONDecodeError:
+                        args_obj = {"_raw": args_raw}
+
+                parsed_tool_calls.append(
+                    ToolCall(
+                        id=str(part.get("id") or f"tool_call_{idx}"),
+                        name=str(part.get("name") or "unknown_tool"),
+                        arguments=args_obj,
+                    )
+                )
+
         yield LLMChunk(
             delta="",
             stop_reason=finish_reason or "stop",
@@ -404,6 +517,7 @@ class OpenAIAdapter:
             output_tokens=usage.completion_tokens if usage else 0,
             thinking_tokens=reasoning_tokens,
             request_id=getattr(last_chunk, "id", "") or "" if last_chunk else "",
+            tool_calls=parsed_tool_calls,
         )
 
     def _parse_response(self, response: Any, model: str) -> LLMResponse:

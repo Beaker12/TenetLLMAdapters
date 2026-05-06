@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import httpx
 from tenet_core.llm.client import (
@@ -27,9 +28,28 @@ _BASE = "https://api.cohere.com"
 class CohereAdapter:
     """Cohere LLM adapter using Cohere v2 API via httpx."""
 
+    @staticmethod
+    def _normalize_base_url(base_url: str | None) -> str:
+        if not base_url:
+            return _BASE
+        candidate = base_url.strip().rstrip("/")
+        if not candidate:
+            return _BASE
+        try:
+            parsed = urlparse(candidate)
+            path = (parsed.path or "").rstrip("/")
+            for suffix in ("/v2/models", "/v2", "/models"):
+                if path.endswith(suffix):
+                    path = path[: -len(suffix)]
+                    break
+            normalized = parsed._replace(path=path).geturl().rstrip("/")
+            return normalized or _BASE
+        except Exception:
+            return candidate
+
     def __init__(self, api_key: str, *, base_url: str | None = None) -> None:
         self._api_key = api_key
-        self._base = (base_url or _BASE).rstrip("/")
+        self._base = self._normalize_base_url(base_url)
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> CohereAdapter:

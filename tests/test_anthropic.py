@@ -128,3 +128,51 @@ async def test_generate_accepts_params() -> None:
     assert kwargs["temperature"] == 0.2
     assert kwargs["stop_sequences"] == ["END"]
 
+
+async def test_stream_accepts_event_type_content_block_delta_variant() -> None:
+    usage = SimpleNamespace(
+        input_tokens=12,
+        output_tokens=5,
+        cache_creation_input_tokens=0,
+        cache_read_input_tokens=0,
+    )
+    final_message = SimpleNamespace(
+        content=[SimpleNamespace(type="text", text="hello from final")],
+        usage=usage,
+        stop_reason="end_turn",
+        id="req-stream-variant-1",
+    )
+
+    class RawDeltaEvent:
+        def __init__(self, *, delta: SimpleNamespace) -> None:
+            self.type = "content_block_delta"
+            self.delta = delta
+
+    stream_cm = AsyncMock()
+    stream_cm.__aenter__.return_value = stream_cm
+    stream_cm.__aexit__.return_value = False
+    stream_cm.get_final_message = AsyncMock(return_value=final_message)
+
+    stream_cm.__aiter__.return_value = [
+        RawDeltaEvent(delta=SimpleNamespace(type="text_delta", text="hello ")),
+        RawDeltaEvent(delta=SimpleNamespace(type="text_delta", text="world")),
+    ]
+
+    mock_client = MagicMock()
+    mock_client.messages = MagicMock()
+    mock_client.messages.stream = MagicMock(return_value=stream_cm)
+
+    with patch("anthropic.AsyncAnthropic", return_value=mock_client):
+        adapter = AnthropicAdapter(api_key="test-key")
+
+    chunks = []
+    async for chunk in adapter.stream(
+        [SimpleNamespace(role="user", content="hello")],
+        "claude-sonnet-4-6",
+    ):
+        chunks.append(chunk)
+
+    assert chunks[0].delta == "hello "
+    assert chunks[1].delta == "world"
+    assert chunks[-1].stop_reason == "end_turn"
+

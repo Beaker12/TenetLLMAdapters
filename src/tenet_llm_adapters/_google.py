@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import httpx
 from tenet_core.llm.client import (
@@ -15,6 +16,7 @@ from tenet_core.llm.client import (
     ToolDef,
     resolve_params,
 )
+from tenet_core.prompt.formatter import format_system_prompt
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -27,9 +29,26 @@ _BASE = "https://generativelanguage.googleapis.com/v1beta"
 class GoogleAdapter:
     """Google Gemini adapter using the REST API via httpx."""
 
+    @staticmethod
+    def _normalize_base_url(base_url: str | None) -> str:
+        if not base_url:
+            return _BASE
+        candidate = base_url.strip().rstrip("/")
+        if not candidate:
+            return _BASE
+        try:
+            parsed = urlparse(candidate)
+            path = (parsed.path or "").rstrip("/")
+            if path.endswith("/models"):
+                path = path[: -len("/models")]
+            normalized = parsed._replace(path=path).geturl().rstrip("/")
+            return normalized or _BASE
+        except Exception:
+            return candidate
+
     def __init__(self, api_key: str, *, base_url: str | None = None) -> None:
         self._api_key = api_key
-        self._base = (base_url or _BASE).rstrip("/")
+        self._base = self._normalize_base_url(base_url)
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> GoogleAdapter:
@@ -187,7 +206,7 @@ class GoogleAdapter:
 
         for msg in messages:
             if msg.role == "system":
-                system_parts.append({"text": msg.content})
+                system_parts.append({"text": format_system_prompt(msg.content, "markdown")})
             elif msg.role == "user":
                 contents.append({"role": "user", "parts": [{"text": msg.content}]})
             elif msg.role == "assistant":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import anthropic
 from tenet_core.llm.client import (
@@ -41,10 +42,30 @@ _LONG_REQUEST_STREAMING_ERROR = (
 class AnthropicAdapter:
     """Anthropic (Claude) LLM adapter."""
 
+    @staticmethod
+    def _normalize_base_url(base_url: str | None) -> str | None:
+        if not base_url:
+            return None
+        candidate = base_url.strip().rstrip("/")
+        if not candidate:
+            return None
+        try:
+            parsed = urlparse(candidate)
+            path = (parsed.path or "").rstrip("/")
+            for suffix in ("/v1/messages", "/v1/models", "/v1"):
+                if path.endswith(suffix):
+                    path = path[: -len(suffix)]
+                    break
+            normalized = parsed._replace(path=path).geturl().rstrip("/")
+            return normalized or None
+        except Exception:
+            return candidate
+
     def __init__(self, api_key: str, *, base_url: str | None = None) -> None:
         kwargs: dict[str, Any] = {"api_key": api_key}
-        if base_url:
-            kwargs["base_url"] = base_url
+        normalized = self._normalize_base_url(base_url)
+        if normalized:
+            kwargs["base_url"] = normalized
         self._client = anthropic.AsyncAnthropic(**kwargs)
 
     @classmethod
@@ -244,19 +265,59 @@ class AnthropicAdapter:
             kwargs["stop_sequences"] = p.stop_sequences
 
         logger.debug("Anthropic streaming call: model=%s", model)
+        streamed_text_parts: list[str] = []
+        streamed_thinking_parts: list[str] = []
         async with self._client.messages.stream(**kwargs) as stream:
             async for event in stream:
-                event_type = type(event).__name__
-                if event_type == "ContentBlockDeltaEvent":
+                event_type_name = type(event).__name__
+                event_type = str(getattr(event, "type", "") or "")
+                is_content_block_delta = (
+                    event_type == "content_block_delta"
+                    or event_type_name.endswith("ContentBlockDeltaEvent")
+                )
+
+                if is_content_block_delta:
                     delta = getattr(event, "delta", None)
                     if delta is None:
                         continue
-                    delta_type = getattr(delta, "type", None)
+                    delta_type = str(getattr(delta, "type", "") or "")
                     if delta_type == "text_delta":
-                        yield LLMChunk(delta=delta.text or "")
+                        text = str(getattr(delta, "text", "") or "")
+                        if text:
+                            streamed_text_parts.append(text)
+                            yield LLMChunk(delta=text)
                     elif delta_type == "thinking_delta":
-                        yield LLMChunk(thinking_delta=delta.thinking or "")
+                        thinking = str(getattr(delta, "thinking", "") or "")
+                        if thinking:
+                            streamed_thinking_parts.append(thinking)
+                            yield LLMChunk(thinking_delta=thinking)
             final = await stream.get_final_message()
+
+            # Some Anthropic SDK versions may not emit delta events in the
+            # same class shape; backfill from final blocks so content is never
+            # silently dropped.
+            if not streamed_text_parts and getattr(final, "content", None):
+                fallback_text_parts: list[str] = []
+                for block in final.content:
+                    if getattr(block, "type", None) == "text":
+                        text = str(getattr(block, "text", "") or "")
+                        if text:
+                            fallback_text_parts.append(text)
+                fallback_text = "\n".join(fallback_text_parts)
+                if fallback_text:
+                    yield LLMChunk(delta=fallback_text)
+
+            if not streamed_thinking_parts and getattr(final, "content", None):
+                fallback_thinking_parts: list[str] = []
+                for block in final.content:
+                    if getattr(block, "type", None) == "thinking":
+                        thinking = str(getattr(block, "thinking", "") or "")
+                        if thinking:
+                            fallback_thinking_parts.append(thinking)
+                fallback_thinking = "\n".join(fallback_thinking_parts)
+                if fallback_thinking:
+                    yield LLMChunk(thinking_delta=fallback_thinking)
+
             yield LLMChunk(
                 delta="",
                 stop_reason=final.stop_reason or "end_turn",
