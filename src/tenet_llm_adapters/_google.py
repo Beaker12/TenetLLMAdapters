@@ -101,7 +101,6 @@ class GoogleAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
@@ -109,14 +108,12 @@ class GoogleAdapter:
         """Generate a response via Gemini generateContent REST endpoint."""
         p = resolve_params(
             params,
-            max_tokens=max_tokens,
             temperature=temperature,
             stop_sequences=stop_sequences,
         )
         payload = self._build_payload(
             messages,
             tools,
-            p.max_tokens,
             p.temperature if p.temperature is not None else 0.0,
             p.stop_sequences,
         )
@@ -132,7 +129,6 @@ class GoogleAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
@@ -140,14 +136,12 @@ class GoogleAdapter:
         """Stream response chunks via Gemini streamGenerateContent endpoint."""
         p = resolve_params(
             params,
-            max_tokens=max_tokens,
             temperature=temperature,
             stop_sequences=stop_sequences,
         )
         payload = self._build_payload(
             messages,
             tools,
-            p.max_tokens,
             p.temperature if p.temperature is not None else 0.0,
             p.stop_sequences,
         )
@@ -196,7 +190,6 @@ class GoogleAdapter:
         self,
         messages: list[Message],
         tools: list[ToolDef] | None,
-        max_tokens: int,
         temperature: float,
         stop_sequences: list[str] | None,
     ) -> dict[str, Any]:
@@ -236,7 +229,6 @@ class GoogleAdapter:
         payload: dict[str, Any] = {
             "contents": contents,
             "generationConfig": {
-                "maxOutputTokens": max_tokens,
                 "temperature": temperature,
             },
         }

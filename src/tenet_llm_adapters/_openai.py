@@ -158,14 +158,13 @@ class OpenAIAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
         extra_headers: dict[str, str] | None = None,
     ) -> LLMResponse:
         """Generate response via OpenAI-compatible Chat Completions API."""
-        p = resolve_params(params, max_tokens=max_tokens, temperature=temperature, stop_sequences=stop_sequences)
+        p = resolve_params(params, temperature=temperature, stop_sequences=stop_sequences)
         effective_temp = p.temperature if p.temperature is not None else 0.0
         api_messages: list[dict[str, Any]] = []
 
@@ -203,11 +202,10 @@ class OpenAIAdapter:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": api_messages,
-            "max_tokens": p.max_tokens,
             "temperature": effective_temp,
+            "top_p": p.top_p,
+            "n": p.n,
         }
-        if p.top_p is not None:
-            kwargs["top_p"] = p.top_p
         # OpenAI reasoning_effort for o1/o3 models
         if p.reasoning is not None and p.reasoning != "off":
             kwargs["reasoning_effort"] = p.reasoning
@@ -243,7 +241,6 @@ class OpenAIAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
@@ -263,7 +260,6 @@ class OpenAIAdapter:
             messages,
             model,
             tools=tools,
-            max_tokens=max_tokens,
             temperature=temperature,
             stop_sequences=stop_sequences,
             params=params,
@@ -277,14 +273,13 @@ class OpenAIAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 16384,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
         thinking_tags: tuple[str, str] | None = None,
         extra_headers: dict[str, str] | None = None,
     ) -> AsyncIterator[LLMChunk]:
-        p = resolve_params(params, max_tokens=max_tokens, temperature=temperature, stop_sequences=stop_sequences)
+        p = resolve_params(params, temperature=temperature, stop_sequences=stop_sequences)
         effective_temp = p.temperature if p.temperature is not None else 0.0
         api_messages: list[dict[str, Any]] = []
         for msg in messages:
@@ -322,13 +317,12 @@ class OpenAIAdapter:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": api_messages,
-            "max_tokens": p.max_tokens,
             "temperature": effective_temp,
+            "top_p": p.top_p,
+            "n": p.n,
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        if p.top_p is not None:
-            kwargs["top_p"] = p.top_p
         # OpenAI reasoning_effort for o1/o3 models
         if p.reasoning is not None and p.reasoning != "off":
             kwargs["reasoning_effort"] = p.reasoning

@@ -100,7 +100,6 @@ class CohereAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
@@ -108,7 +107,6 @@ class CohereAdapter:
         """Generate a response via Cohere v2 /chat endpoint."""
         p = resolve_params(
             params,
-            max_tokens=max_tokens,
             temperature=temperature,
             stop_sequences=stop_sequences,
         )
@@ -116,7 +114,6 @@ class CohereAdapter:
             messages,
             model,
             tools,
-            p.max_tokens,
             p.temperature if p.temperature is not None else 0.0,
             p.stop_sequences,
             stream=False,
@@ -138,7 +135,6 @@ class CohereAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
@@ -146,7 +142,6 @@ class CohereAdapter:
         """Stream response chunks via Cohere v2 /chat with stream=True."""
         p = resolve_params(
             params,
-            max_tokens=max_tokens,
             temperature=temperature,
             stop_sequences=stop_sequences,
         )
@@ -154,7 +149,6 @@ class CohereAdapter:
             messages,
             model,
             tools,
-            p.max_tokens,
             p.temperature if p.temperature is not None else 0.0,
             p.stop_sequences,
             stream=True,
@@ -218,7 +212,6 @@ class CohereAdapter:
         messages: list[Message],
         model: str,
         tools: list[ToolDef] | None,
-        max_tokens: int,
         temperature: float,
         stop_sequences: list[str] | None,
         *,
@@ -263,7 +256,6 @@ class CohereAdapter:
         payload: dict[str, Any] = {
             "model": model,
             "messages": cohere_msgs,
-            "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": stream,
         }

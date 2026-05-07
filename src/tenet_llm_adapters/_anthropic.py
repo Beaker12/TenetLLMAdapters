@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import importlib.util
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import anthropic
+import httpx
 from tenet_core.llm.client import (
     LLMChunk,
     LLMParams,
@@ -66,7 +69,26 @@ class AnthropicAdapter:
         normalized = self._normalize_base_url(base_url)
         if normalized:
             kwargs["base_url"] = normalized
+
+        # If users configure a SOCKS proxy globally but don't have socksio
+        # installed, anthropic/httpx can fail during client construction and
+        # later emit noisy destructor warnings from partially initialized state.
+        if self._should_disable_env_proxy():
+            kwargs["http_client"] = httpx.AsyncClient(trust_env=False)
+
         self._client = anthropic.AsyncAnthropic(**kwargs)
+
+    @staticmethod
+    def _should_disable_env_proxy() -> bool:
+        """Return True when SOCKS proxy env is configured without socksio."""
+        proxy_vars = ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY")
+        has_socks_proxy = any(
+            (os.getenv(name, "") or "").lower().startswith(("socks5://", "socks5h://", "socks4://"))
+            for name in proxy_vars
+        )
+        if not has_socks_proxy:
+            return False
+        return importlib.util.find_spec("socksio") is None
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> AnthropicAdapter:
@@ -161,7 +183,6 @@ class AnthropicAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
@@ -169,7 +190,6 @@ class AnthropicAdapter:
         """Generate response via Anthropic Messages API."""
         p = resolve_params(
             params,
-            max_tokens=max_tokens,
             temperature=temperature,
             stop_sequences=stop_sequences,
         )
@@ -180,7 +200,6 @@ class AnthropicAdapter:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": api_messages,
-            "max_tokens": p.max_tokens,
             "temperature": p.temperature if p.temperature is not None else 0.0,
         }
         if system_prompt:
@@ -214,7 +233,6 @@ class AnthropicAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
@@ -224,7 +242,6 @@ class AnthropicAdapter:
             messages,
             model,
             tools=tools,
-            max_tokens=max_tokens,
             temperature=temperature,
             stop_sequences=stop_sequences,
             params=params,
@@ -236,14 +253,12 @@ class AnthropicAdapter:
         model: str,
         *,
         tools: list[ToolDef] | None = None,
-        max_tokens: int = 4096,
         temperature: float = 0.0,
         stop_sequences: list[str] | None = None,
         params: LLMParams | None = None,
     ) -> AsyncIterator[LLMChunk]:
         p = resolve_params(
             params,
-            max_tokens=max_tokens,
             temperature=temperature,
             stop_sequences=stop_sequences,
         )
@@ -254,7 +269,6 @@ class AnthropicAdapter:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": api_messages,
-            "max_tokens": p.max_tokens,
             "temperature": p.temperature if p.temperature is not None else 0.0,
         }
         if system_prompt:
