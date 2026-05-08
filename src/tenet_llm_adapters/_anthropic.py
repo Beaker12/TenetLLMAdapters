@@ -37,9 +37,41 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+_MODEL_BETAS: dict[str, list[str]] = {
+    "claude-opus-4": ["interleaved-thinking-2025-05-14"],
+    "claude-opus-4-5": ["interleaved-thinking-2025-05-14"],
+    "claude-sonnet-4": ["interleaved-thinking-2025-05-14"],
+    "claude-sonnet-4-5": ["interleaved-thinking-2025-05-14"],
+    "claude-sonnet-4-6": ["interleaved-thinking-2025-05-14"],
+    "claude-haiku-4-5": [],
+}
+
+
+def get_model_betas(model_id: str) -> list[str]:
+    """Return anthropic-beta header values for model_id."""
+    for prefix, betas in _MODEL_BETAS.items():
+        if model_id.startswith(prefix):
+            return list(betas)
+    return []
+
+
 _LONG_REQUEST_STREAMING_ERROR = (
     "Streaming is required for operations that may take longer than 10 minutes."
 )
+
+_DEFAULT_MAX_TOKENS = 4096
+
+
+def _resolve_max_tokens(model: str) -> int:
+    """Return max_tokens for *model* from the registry, or a safe default."""
+    try:
+        from tenet_core.llm.models import get_model  # noqa: PLC0415
+        caps = get_model(model)
+        if caps is not None and int(getattr(caps, "max_output_tokens", 0) or 0) > 0:
+            return int(caps.max_output_tokens)
+    except Exception:  # noqa: BLE001
+        pass
+    return _DEFAULT_MAX_TOKENS
 
 
 class AnthropicAdapter:
@@ -200,6 +232,7 @@ class AnthropicAdapter:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": api_messages,
+            "max_tokens": _resolve_max_tokens(model),
             "temperature": p.temperature if p.temperature is not None else 0.0,
         }
         if system_prompt:
@@ -208,8 +241,11 @@ class AnthropicAdapter:
             kwargs["tools"] = api_tools
         if p.stop_sequences:
             kwargs["stop_sequences"] = p.stop_sequences
+        betas = get_model_betas(model)
+        if betas:
+            kwargs["betas"] = betas
 
-        logger.debug("Anthropic API call: model=%s", model)
+        logger.debug("Anthropic API call: model=%s max_tokens=%d", model, kwargs["max_tokens"])
         try:
             response = await self._client.messages.create(**kwargs)
         except ValueError as exc:
@@ -269,6 +305,7 @@ class AnthropicAdapter:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": api_messages,
+            "max_tokens": _resolve_max_tokens(model),
             "temperature": p.temperature if p.temperature is not None else 0.0,
         }
         if system_prompt:
@@ -277,8 +314,11 @@ class AnthropicAdapter:
             kwargs["tools"] = api_tools
         if p.stop_sequences:
             kwargs["stop_sequences"] = p.stop_sequences
+        betas = get_model_betas(model)
+        if betas:
+            kwargs["betas"] = betas
 
-        logger.debug("Anthropic streaming call: model=%s", model)
+        logger.debug("Anthropic streaming call: model=%s max_tokens=%d", model, kwargs["max_tokens"])
         streamed_text_parts: list[str] = []
         streamed_thinking_parts: list[str] = []
         async with self._client.messages.stream(**kwargs) as stream:

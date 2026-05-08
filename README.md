@@ -39,6 +39,10 @@ Use the package by setting provider names in TenetCore backend configuration.
 
 Provider credentials and endpoint configuration are supplied by environment variables and host runtime backend configuration.
 
+### Anthropic Adapter
+
+The Anthropic adapter automatically resolves `max_tokens` from the TenetCore model registry. If a model's `max_output_tokens` capability is available, that value is used; otherwise a safe default of 4096 is applied. This ensures compatibility with both older and newer Claude models without requiring manual configuration.
+
 ## API/CLI Surface
 
 - Python entry-point group: `tenet.llm_adapters`
