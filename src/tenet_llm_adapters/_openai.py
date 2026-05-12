@@ -1,3 +1,10 @@
+# Tenet Platform
+# Copyright (C) 2024 Stuart W. Parkhurst
+#
+# This file is part of the Tenet Platform.
+# Licensed under the GNU Affero General Public License v3.0
+# See LICENSE file or https://www.gnu.org/licenses/agpl-3.0.html
+
 """OpenAI-compatible adapter implementation for the Tenet LLM plugin system."""
 
 from __future__ import annotations
@@ -9,8 +16,6 @@ from urllib.parse import urlparse
 _OPENAI_BATCH_MODELS: frozenset[str] = frozenset({
     "gpt-4o", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06",
     "gpt-4o-mini", "gpt-4o-mini-2024-07-18",
-    "gpt-3.5-turbo", "gpt-3.5-turbo-0125",
-    "gpt-4-turbo", "gpt-4-turbo-preview",
     "o3-mini",
 })
 
@@ -21,6 +26,7 @@ if TYPE_CHECKING:
 
 import openai
 from tenet_core.llm.client import LLMChunk, LLMParams, LLMResponse, Message, ToolCall, ToolDef, resolve_params
+from tenet_llm_adapters._gateway import _resolve_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +70,8 @@ class OpenAIAdapter:
 
     def __init__(self, api_key: str, *, base_url: str | None = None) -> None:
         kwargs: dict[str, Any] = {"api_key": api_key}
-        normalized = self._normalize_base_url(base_url)
+        resolved = _resolve_base_url("https://api.openai.com/v1", base_url)
+        normalized = self._normalize_base_url(resolved)
         if normalized:
             kwargs["base_url"] = normalized
         self._client = openai.AsyncOpenAI(**kwargs)

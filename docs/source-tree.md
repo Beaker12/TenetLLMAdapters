@@ -10,6 +10,8 @@ src/tenet_llm_adapters/
 ├── _anthropic.py        # Anthropic (Claude) adapter
 ├── _google.py           # Google Gemini adapter
 ├── _cohere.py           # Cohere v2 adapter
+├── _gateway.py          # TenetLLMGateway pass-through adapter
+├── router.py            # MLRouterClient — cost-tier classifier client
 tests/
 ├── conftest.py          # Shared fixtures
 ├── test_openai.py       # OpenAI adapter tests
@@ -42,8 +44,8 @@ pyproject.toml           # Package metadata, entry points, extras
 | Symbol | Kind | Description |
 |---|---|---|
 | `_MODULE_ID` | str | `"tenet_llm_adapters"` |
-| `_MODULE_VERSION` | str | `"1.0.0"` |
-| `_TUNABLES` | list | Empty list |
+| `_MODULE_VERSION` | str | `"1.1.0"` |
+| `_TUNABLES` | list | One entry: `llm.gateway_url` (str, default `""`) |
 | `get_declaration()` | function | Returns `ModuleDeclaration` for TenetCore registration |
 
 ### `_openai.py`

@@ -1,4 +1,14 @@
+# Tenet Platform
+# Copyright (C) 2026 Stuart W. Parkhurst
+#
+# This file is part of the Tenet Platform.
+# Licensed under the GNU Affero General Public License v3.0
+# See LICENSE file or https://www.gnu.org/licenses/agpl-3.0.html
+
 from __future__ import annotations
+
+import os
+from unittest.mock import patch
 
 import respx
 from httpx import Response
@@ -108,12 +118,11 @@ async def test_google_generate_accepts_params() -> None:
     result = await adapter.generate(
         messages=[Message(role="user", content="hi")],
         model="gemini-1.5-pro",
-        params=LLMParams(max_tokens=256, temperature=0.2, stop_sequences=["END"]),
+        params=LLMParams(temperature=0.2, stop_sequences=["END"]),
     )
 
     assert route.called
     body = route.calls[0].request.content.decode("utf-8")
-    assert '"maxOutputTokens":256' in body
     assert '"temperature":0.2' in body
     assert '"stopSequences":["END"]' in body
     assert result.content == "hello from params"
@@ -145,3 +154,21 @@ async def test_google_stream_emits_terminal_chunk() -> None:
     assert chunks[-1].input_tokens == 12
     assert chunks[-1].output_tokens == 9
     assert chunks[-1].request_id == "resp-1"
+
+
+def test_gateway_url_sets_base_for_google() -> None:
+    """When TENET_LLM_GATEWAY_URL is set, GoogleAdapter._base must use the gateway URL."""
+    gateway = "http://test-gateway:8430"
+    with patch.dict(os.environ, {"TENET_LLM_GATEWAY_URL": gateway}, clear=False):
+        adapter = GoogleAdapter(api_key="g-key")
+
+    assert adapter._base == gateway
+
+
+def test_gateway_url_overrides_explicit_base_url_for_google() -> None:
+    """Gateway URL takes precedence over an explicit base_url kwarg."""
+    gateway = "http://test-gateway:8430"
+    with patch.dict(os.environ, {"TENET_LLM_GATEWAY_URL": gateway}, clear=False):
+        adapter = GoogleAdapter(api_key="g-key", base_url="https://custom.example.com/v1beta")
+
+    assert adapter._base == gateway

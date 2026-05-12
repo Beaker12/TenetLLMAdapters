@@ -1071,6 +1071,11 @@ openai = [
     { name = "openai" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "respx" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.40,<1.0" },
@@ -1087,6 +1092,9 @@ requires-dist = [
     { name = "tenet-llm-adapters", extras = ["openai"], marker = "extra == 'all'" },
 ]
 provides-extras = ["anthropic", "openai", "google", "cohere", "all", "dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "respx", specifier = ">=0.23.1" }]
 
 [[package]]
 name = "tqdm"

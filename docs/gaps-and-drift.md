@@ -1,67 +1,93 @@
 # Gaps and Drift — TenetLLMAdapters
 
-## Observed Inconsistencies
+Last audited: 2026-05-12
 
-### 1. Streaming `max_tokens` Mismatch (OpenAI)
+## Resolved gaps (fixed in current code)
 
-`OpenAIAdapter.generate()` defaults to `max_tokens=4096`, but `_stream_impl()` defaults to `max_tokens=16384`. The public `stream()` method passes the caller's `max_tokens` (default `4096`) through to `_stream_impl()`, which then shadows it with its own `16384` default. This is a latent bug — the caller's explicit `max_tokens` **does** get forwarded, but if `stream()` is called without `max_tokens`, it receives `4096` from `stream()`'s signature, not `16384` from `_stream_impl()`. The `_stream_impl` default of `16384` is dead code.
+The following issues identified in earlier audits are resolved in the current source.
 
-**Impact:** Low. The default `4096` from `stream()` always wins.
-**Fix:** Align `_stream_impl` default to `4096` or remove the redundant default.
+### Cohere streaming sentinel chunk
+`CohereAdapter.stream()` now yields a terminal `LLMChunk` with `stop_reason`,
+`input_tokens`, `output_tokens`, and `request_id` after consuming all NDJSON
+events. Token counts are sourced from `usage.billed_units` in the final event.
 
-### 2. No Abstract Base Class
+### Google streaming sentinel chunk
+`GoogleAdapter.stream()` now yields a terminal `LLMChunk` after the SSE stream
+completes, carrying `stop_reason`, `input_tokens` (`promptTokenCount`), and
+`output_tokens` (`candidatesTokenCount`).
 
-The adapter contract is structural only. No ABC or Protocol class is defined. This makes it impossible to statically verify adapter compliance.
+### Google tool call ID uniqueness
+`GoogleAdapter._parse_response()` now uses a `tool_call_index` counter, producing
+IDs in the form `call_{function_name}_{index}`. Multiple calls to the same function
+in a single response receive unique IDs.
 
-**Impact:** Medium. New adapters could silently omit methods.
-**Fix:** Define a `Protocol` class in `tenet_core.llm` or in this package.
+### OpenAI `_stream_impl` default `max_tokens` dead code
+`OpenAIAdapter` now resolves `max_tokens` through `LLMParams` / `resolve_params`
+rather than a per-method default. Both `generate()` and `stream()` delegate to
+`resolve_params(params, ...)`, and `_resolve_max_tokens(model)` is used for the
+Anthropic adapter. The OpenAI streaming path no longer has a `16384` default.
 
-### 3. Google Tool Call ID Synthesis
+---
 
-`GoogleAdapter._parse_response()` generates tool call IDs as `f"call_{fc['name']}"`. If a response contains multiple calls to the same function, they get identical IDs, which breaks TenetCore's tool result routing.
+## Open gaps
 
-**Impact:** Medium for multi-tool-call scenarios with duplicate function names.
-**Fix:** Use a counter or UUID suffix.
+### 1. No abstract base class or Protocol enforcement
 
-### 4. `all` Extra Excludes Google and Cohere
+The adapter contract is structural only. No ABC or `Protocol` class is defined in
+this package or in TenetCore's public interface. New adapters can silently omit
+methods; the failure only appears at call time.
 
-`pyproject.toml` defines `all = ["tenet-llm-adapters[anthropic]", "tenet-llm-adapters[openai]"]`. Since Google and Cohere only need `httpx` (already a base dependency), this is technically correct, but semantically misleading.
+**Impact:** Medium. New adapters could partially implement the interface.
+**Fix:** Define a `typing.Protocol` class in `tenet_core.llm` or in this package
+and annotate all adapter classes as implementing it.
 
-**Impact:** Low. Users may expect `[all]` to install something for these providers.
-**Fix:** Document explicitly or add them to `all` as no-ops.
+### 2. `all` extra excludes Google and Cohere semantically
 
-### 5. No Retry or Circuit Breaker
+`pyproject.toml` defines `all = ["tenet-llm-adapters[anthropic]", "tenet-llm-adapters[openai]"]`.
+Google and Cohere require only `httpx` (already a base dependency), so the extra
+is technically correct, but users may expect `[all]` to include something for
+Google and Cohere providers.
 
-Adapters do not implement retry logic. This is by design (retries belong in TenetCore), but it means transient failures always propagate. If TenetCore does not implement retries yet, there is no resilience layer.
+**Impact:** Low. All four adapters are functional regardless.
+**Fix:** Add a comment in `pyproject.toml` explaining why `[all]` omits these, or
+add them as explicit (no-op) extras for documentation clarity.
+
+### 3. No retry or circuit breaker
+
+Adapters propagate upstream errors directly to the caller. Retry logic belongs in
+TenetCore, but if TenetCore does not implement retries, there is no resilience layer.
 
 **Impact:** Depends on TenetCore implementation.
+**Status:** By design (R-LLM-022: no retry in adapter). Track at TenetCore level.
 
-### 6. Cohere Streaming: No Final Usage Chunk
+### 4. Batch model frozensets require manual updates
 
-`CohereAdapter.stream()` yields `content-delta` events but never emits a final `LLMChunk` with `stop_reason` and token counts. The stream ends without a sentinel chunk.
+`_OPENAI_BATCH_MODELS` and `_ANTHROPIC_BATCH_MODELS` are hardcoded. Anthropic
+has API-driven detection as primary with the frozenset as fallback, but OpenAI
+batch support is frozenset-only.
 
-**Impact:** Medium. TenetCore may expect a sentinel chunk with usage data.
-**Fix:** Parse `message-end` event type from the Cohere stream for usage + stop reason, then yield a final sentinel.
+**Impact:** Low. Incorrect `supports_batch` on newly released models until the
+frozenset is updated.
 
-### 7. Google Streaming: No Final Usage Chunk
+### 5. `MLRouterClient` has no tests or documentation
 
-`GoogleAdapter.stream()` yields text deltas but never emits a final sentinel `LLMChunk` with `stop_reason` and usage metadata.
+`router.py` provides `MLRouterClient`, a cost-tier classifier client. It is not
+registered as an entry point and has no dedicated tests or doc references.
 
-**Impact:** Medium. Same as Cohere — missing sentinel.
-**Fix:** Track the last chunk's `usageMetadata` and `finishReason`, then yield a final sentinel.
+**Impact:** Low. The module is a utility for TenetCore callers; it defaults safely
+to `"medium"` when the classifier service is unavailable.
+**Fix:** Add unit tests for `predict_tier()` covering the endpoint-unavailable
+fallback and the label-to-tier mapping.
 
-### 8. Batch Model Staleness
+---
 
-Both `_OPENAI_BATCH_MODELS` and `_ANTHROPIC_BATCH_MODELS` are hardcoded frozensets. They require manual updates when providers add new batch-capable models.
-
-**Impact:** Low. Anthropic has API-driven detection as primary, frozenset as fallback.
-
-## Documentation vs Code Drift
+## Documentation vs code drift
 
 | Document | Status | Notes |
 |---|---|---|
-| Previous `docs/README.md` | Replaced | Was a placeholder with no provider details |
-| Previous `docs/operations.md` | Replaced | Was a stub with no actionable commands |
-| Previous `docs/integration.md` | Replaced | Was a stub with no contract details |
-| `SRS_TENETLLMADAPTERS.md` | Not verified | EGRF requirements doc not read for this audit |
-| `ARCH_TENETLLMADAPTERS.md` | Not verified | EGRF architecture doc not read for this audit |
+| `docs/gaps-and-drift.md` | Updated 2026-05-11 | This file |
+| `docs/architecture.md` | Current | Reflects lazy import, SDK vs REST split, streaming sentinel, thinking support |
+| `docs/configuration.md` | Current | Reflects `LLMParams` generation parameters and HTTP timeouts |
+| `docs/providers.md` | Current | Per-provider API surface, batch models, capability extraction |
+| `SRS_TENETLLMADAPTERS.md` | Current | Requirements verified against implementation |
+| `ARCH_TENETLLMADAPTERS.md` | Current | Architecture decisions aligned |

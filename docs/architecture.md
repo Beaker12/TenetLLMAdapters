@@ -101,14 +101,46 @@ The `declaration.py` module registers via the `tenet.module_declarations` entry 
 ```python
 ModuleDeclaration(
     module_id="tenet_llm_adapters",
-    module_version="1.0.0",
+    module_version="1.1.0",
     module_category="core",
     required=True,
-    tunables=[],
+    tunables=[TunableDeclaration(key="llm.gateway_url", ...)],
 )
 ```
 
-No tunables are declared — all configuration flows through `BackendConfig` in the instance manifest.
+One tunable — `llm.gateway_url` (str, default `""`) — points to a TenetLLMGateway base URL. When non-empty, the gateway adapter is used instead of direct provider adapters. All other configuration flows through `BackendConfig` in the instance manifest.
+
+## ML Router Client
+
+`router.py` contains `MLRouterClient`, a cost-tier classifier client that is **not** an adapter. It accepts an optional `endpoint_url` and exposes:
+
+```python
+async def predict_tier(text, turn_number, prompt_char_count) -> str  # "low" | "medium" | "high"
+```
+
+When the classifier service is unavailable (or `endpoint_url` is empty), the method returns `"medium"` as a safe default. Label-to-tier mapping: `needs_reasoning` → `high`, `no_reasoning` → `low`, `fallback` → `medium`.
+
+This is a utility for TenetCore callers that route queries to different cost tiers before picking a model.
+
+## Anthropic Extended Thinking and Beta Headers
+
+`AnthropicAdapter` propagates `anthropic-beta` headers for Claude 4 and Claude Sonnet 4.x model families using the `interleaved-thinking-2025-05-14` beta flag. The `get_model_betas(model_id)` function performs a prefix-based lookup against `_MODEL_BETAS`:
+
+| Model prefix | Beta headers |
+|---|---|
+| `claude-opus-4`, `claude-opus-4-5` | `interleaved-thinking-2025-05-14` |
+| `claude-sonnet-4`, `claude-sonnet-4-5`, `claude-sonnet-4-6` | `interleaved-thinking-2025-05-14` |
+| `claude-haiku-4-5` | (none) |
+
+Thinking deltas arrive as `thinking_delta` content block events and are separately accumulated and yielded as `LLMChunk(thinking_delta=...)` in the streaming path.
+
+## Anthropic SOCKS Proxy Guard
+
+`AnthropicAdapter.__init__` calls `_should_disable_env_proxy()` before constructing the `anthropic.AsyncAnthropic` client. When a SOCKS proxy environment variable (`ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY`) is set but `socksio` is not installed, it passes `http_client=httpx.AsyncClient(trust_env=False)` to suppress proxy resolution. This prevents httpx destructor warnings from partially initialized state on environments with SOCKS proxies configured globally.
+
+## Anthropic Long-Request Streaming Fallback
+
+`generate()` catches the Anthropic SDK `ValueError` with the long-request streaming error message. When caught, it retries the same payload via `_generate_via_streaming_api()`, which uses the streaming context manager and calls `stream.get_final_message()` to return a complete `LLMResponse`. This is transparent to callers.
 
 ## Lazy Import Strategy
 
@@ -159,7 +191,7 @@ All adapters accept provider-agnostic `LLMParams` in both `generate()` and `stre
 
 Both OpenAI and Anthropic maintain hardcoded frozensets of known batch-capable models:
 
-- `_OPENAI_BATCH_MODELS`: gpt-4o variants, gpt-3.5-turbo, gpt-4-turbo, o3-mini
+- `_OPENAI_BATCH_MODELS`: `{gpt-4o, gpt-4o-2024-11-20, gpt-4o-2024-08-06, gpt-4o-mini, gpt-4o-mini-2024-07-18, o3-mini}`
 - `_ANTHROPIC_BATCH_MODELS`: Claude 3.7/3.5/3 variants
 
 Anthropic also reads batch capability from the model's `capabilities` object when the API provides it, falling back to the frozenset.

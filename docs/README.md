@@ -86,10 +86,10 @@ Google and Cohere adapters use `httpx` directly (no vendor SDK).
 
 Registered via `tenet.module_declarations` entry point:
 - **module_id:** `tenet_llm_adapters`
-- **module_version:** `1.0.0`
+- **module_version:** `1.1.0`
 - **module_category:** `core`
 - **required:** `true`
-- **tunables:** none
+- **tunables:** `llm.gateway_url` (str, default `""`) — base URL of a TenetLLMGateway instance; when set, the gateway adapter is used for all providers
 
 ## EGRF References
 

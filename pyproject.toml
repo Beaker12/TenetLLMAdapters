@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tenet-llm-adapters"
-version = "1.0.0"
+version = "1.1.0"
 description = "Cloud LLM adapters for the Tenet platform (Anthropic, OpenAI, Google, Cohere)"
 readme = "README.md"
 license = {text = "AGPL-3.0-only"}
@@ -68,3 +68,8 @@ asyncio_mode = "auto"
 
 [tool.uv.sources]
 tenet-core = { path = "../TenetCore", editable = true }
+
+[dependency-groups]
+dev = [
+    "respx>=0.23.1",
+]

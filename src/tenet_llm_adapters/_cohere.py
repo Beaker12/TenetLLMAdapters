@@ -1,3 +1,10 @@
+# Tenet Platform
+# Copyright (C) 2024 Stuart W. Parkhurst
+#
+# This file is part of the Tenet Platform.
+# Licensed under the GNU Affero General Public License v3.0
+# See LICENSE file or https://www.gnu.org/licenses/agpl-3.0.html
+
 """Cohere adapter for the Tenet LLM plugin system."""
 
 from __future__ import annotations
@@ -7,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
+from tenet_llm_adapters._gateway import _resolve_base_url
 from tenet_core.llm.client import (
     LLMChunk,
     LLMParams,
@@ -49,7 +57,8 @@ class CohereAdapter:
 
     def __init__(self, api_key: str, *, base_url: str | None = None) -> None:
         self._api_key = api_key
-        self._base = self._normalize_base_url(base_url)
+        resolved = _resolve_base_url(_BASE, base_url)
+        self._base = self._normalize_base_url(resolved)
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> CohereAdapter:

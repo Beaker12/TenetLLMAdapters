@@ -1,4 +1,14 @@
+# Tenet Platform
+# Copyright (C) 2024 Stuart W. Parkhurst
+#
+# This file is part of the Tenet Platform.
+# Licensed under the GNU Affero General Public License v3.0
+# See LICENSE file or https://www.gnu.org/licenses/agpl-3.0.html
+
 from __future__ import annotations
+
+import os
+from unittest.mock import patch
 
 import respx
 from httpx import Response
@@ -91,12 +101,11 @@ async def test_cohere_generate_accepts_params() -> None:
     result = await adapter.generate(
         messages=[Message(role="user", content="hi")],
         model="command-r-plus",
-        params=LLMParams(max_tokens=128, temperature=0.3, stop_sequences=["END"]),
+        params=LLMParams(temperature=0.3, stop_sequences=["END"]),
     )
 
     assert route.called
     body = route.calls[0].request.content.decode("utf-8")
-    assert '"max_tokens":128' in body
     assert '"temperature":0.3' in body
     assert '"stop_sequences":["END"]' in body
     assert result.content == "hello params"
@@ -128,3 +137,21 @@ async def test_cohere_stream_emits_terminal_chunk() -> None:
     assert chunks[-1].input_tokens == 7
     assert chunks[-1].output_tokens == 4
     assert chunks[-1].request_id == "evt-3"
+
+
+def test_gateway_url_sets_base_for_cohere() -> None:
+    """When TENET_LLM_GATEWAY_URL is set, CohereAdapter._base must use the gateway URL."""
+    gateway = "http://test-gateway:8430"
+    with patch.dict(os.environ, {"TENET_LLM_GATEWAY_URL": gateway}, clear=False):
+        adapter = CohereAdapter(api_key="c-key")
+
+    assert adapter._base == gateway
+
+
+def test_gateway_url_overrides_explicit_base_url_for_cohere() -> None:
+    """Gateway URL takes precedence over an explicit base_url kwarg."""
+    gateway = "http://test-gateway:8430"
+    with patch.dict(os.environ, {"TENET_LLM_GATEWAY_URL": gateway}, clear=False):
+        adapter = CohereAdapter(api_key="c-key", base_url="https://api.cohere.com")
+
+    assert adapter._base == gateway

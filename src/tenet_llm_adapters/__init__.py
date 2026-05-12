@@ -1,3 +1,10 @@
+# Tenet Platform
+# Copyright (C) 2024 Stuart W. Parkhurst
+#
+# This file is part of the Tenet Platform.
+# Licensed under the GNU Affero General Public License v3.0
+# See LICENSE file or https://www.gnu.org/licenses/agpl-3.0.html
+
 """Cloud LLM adapters for the Tenet platform.
 
 Provides Anthropic, OpenAI-compatible, Google Gemini, and Cohere adapters.
@@ -15,6 +22,8 @@ Install with the extra that matches the provider you need, e.g.::
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+
+__version__ = "1.1.0"
 
 if TYPE_CHECKING:
     from tenet_llm_adapters._anthropic import AnthropicAdapter

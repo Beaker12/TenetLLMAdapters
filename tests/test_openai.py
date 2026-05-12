@@ -1,5 +1,13 @@
+# Tenet Platform
+# Copyright (C) 2025 Stuart W. Parkhurst
+#
+# This file is part of the Tenet Platform.
+# Licensed under the GNU Affero General Public License v3.0
+# See LICENSE file or https://www.gnu.org/licenses/agpl-3.0.html
+
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -95,3 +103,44 @@ async def test_stream_terminal_chunk_includes_reasoning_tokens() -> None:
     assert chunks[-1].input_tokens == 5267
     assert chunks[-1].output_tokens == 99
     assert chunks[-1].thinking_tokens == 98
+
+
+async def test_gateway_url_overrides_base_url_for_openai() -> None:
+    """When TENET_LLM_GATEWAY_URL is set, the OpenAI client must use it as base_url.
+
+    The OpenAI adapter normalizes base URLs to always include a path — when the
+    gateway URL has no path component, ``_normalize_base_url`` appends ``/v1``.
+    """
+    captured: dict[str, object] = {}
+
+    def _fake_openai(**kwargs: object) -> MagicMock:
+        captured.update(kwargs)
+        return MagicMock()
+
+    gateway = "http://test-gateway:8430"
+    with (
+        patch("openai.AsyncOpenAI", side_effect=_fake_openai),
+        patch.dict(os.environ, {"TENET_LLM_GATEWAY_URL": gateway}, clear=False),
+    ):
+        OpenAIAdapter(api_key="test-key")
+
+    # _normalize_base_url appends /v1 when no path is present
+    assert captured.get("base_url") == gateway + "/v1"
+
+
+async def test_gateway_url_overrides_explicit_base_url_for_openai() -> None:
+    """Gateway URL with /v1 path is preserved as-is by the OpenAI adapter."""
+    captured: dict[str, object] = {}
+
+    def _fake_openai(**kwargs: object) -> MagicMock:
+        captured.update(kwargs)
+        return MagicMock()
+
+    gateway = "http://test-gateway:8430/v1"
+    with (
+        patch("openai.AsyncOpenAI", side_effect=_fake_openai),
+        patch.dict(os.environ, {"TENET_LLM_GATEWAY_URL": gateway}, clear=False),
+    ):
+        OpenAIAdapter(api_key="test-key", base_url="https://api.openai.com/v1")
+
+    assert captured.get("base_url") == gateway

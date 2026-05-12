@@ -1,3 +1,10 @@
+# Tenet Platform
+# Copyright (C) 2026 Stuart W. Parkhurst
+#
+# This file is part of the Tenet Platform.
+# Licensed under the GNU Affero General Public License v3.0
+# See LICENSE file or https://www.gnu.org/licenses/agpl-3.0.html
+
 """Anthropic adapter implementation for the Tenet LLM plugin system."""
 
 from __future__ import annotations
@@ -10,6 +17,7 @@ from urllib.parse import urlparse
 
 import anthropic
 import httpx
+from tenet_llm_adapters._gateway import _resolve_base_url
 from tenet_core.llm.client import (
     LLMChunk,
     LLMParams,
@@ -98,7 +106,8 @@ class AnthropicAdapter:
 
     def __init__(self, api_key: str, *, base_url: str | None = None) -> None:
         kwargs: dict[str, Any] = {"api_key": api_key}
-        normalized = self._normalize_base_url(base_url)
+        resolved = _resolve_base_url(None, base_url)
+        normalized = self._normalize_base_url(resolved)
         if normalized:
             kwargs["base_url"] = normalized
 

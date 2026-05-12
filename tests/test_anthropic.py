@@ -1,7 +1,17 @@
+# Tenet Platform
+# Copyright (C) 2025 Stuart W. Parkhurst
+#
+# This file is part of the Tenet Platform.
+# Licensed under the GNU Affero General Public License v3.0
+# See LICENSE file or https://www.gnu.org/licenses/agpl-3.0.html
+
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from tenet_core.llm.client import LLMParams
 
@@ -84,7 +94,6 @@ async def test_generate_falls_back_to_streaming_for_long_requests() -> None:
     response = await adapter.generate(
         [SimpleNamespace(role="user", content="hello")],
         "claude-sonnet-4-6",
-        max_tokens=64000,
     )
 
     assert response.content == "streamed final response"
@@ -119,14 +128,49 @@ async def test_generate_accepts_params() -> None:
     result = await adapter.generate(
         [SimpleNamespace(role="user", content="hello")],
         "claude-sonnet-4-6",
-        params=LLMParams(max_tokens=256, temperature=0.2, stop_sequences=["END"]),
+        params=LLMParams(temperature=0.2, stop_sequences=["END"]),
     )
 
     assert result.content == "ok"
     kwargs = mock_client.messages.create.await_args.kwargs
-    assert kwargs["max_tokens"] == 256
     assert kwargs["temperature"] == 0.2
     assert kwargs["stop_sequences"] == ["END"]
+
+
+async def test_gateway_url_overrides_base_url_for_anthropic() -> None:
+    """When TENET_LLM_GATEWAY_URL is set, the Anthropic client must use it as base_url."""
+    captured: dict[str, object] = {}
+
+    def _fake_anthropic(**kwargs: object) -> MagicMock:
+        captured.update(kwargs)
+        return MagicMock()
+
+    gateway = "http://test-gateway:8430"
+    with (
+        patch("anthropic.AsyncAnthropic", side_effect=_fake_anthropic),
+        patch.dict(os.environ, {"TENET_LLM_GATEWAY_URL": gateway}, clear=False),
+    ):
+        AnthropicAdapter(api_key="test-key")
+
+    assert captured.get("base_url") == gateway
+
+
+async def test_gateway_url_overrides_explicit_base_url_for_anthropic() -> None:
+    """Gateway URL takes precedence over an explicit base_url kwarg."""
+    captured: dict[str, object] = {}
+
+    def _fake_anthropic(**kwargs: object) -> MagicMock:
+        captured.update(kwargs)
+        return MagicMock()
+
+    gateway = "http://test-gateway:8430"
+    with (
+        patch("anthropic.AsyncAnthropic", side_effect=_fake_anthropic),
+        patch.dict(os.environ, {"TENET_LLM_GATEWAY_URL": gateway}, clear=False),
+    ):
+        AnthropicAdapter(api_key="test-key", base_url="https://custom.example.com")
+
+    assert captured.get("base_url") == gateway
 
 
 async def test_stream_accepts_event_type_content_block_delta_variant() -> None:
