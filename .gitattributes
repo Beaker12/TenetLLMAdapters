@@ -1,0 +1,2 @@
+# Git LFS — diagram images (exported from TenetEGRF)
+*.png       filter=lfs diff=lfs merge=lfs -text
