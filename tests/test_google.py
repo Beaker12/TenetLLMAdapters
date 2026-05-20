@@ -130,10 +130,12 @@ async def test_google_generate_accepts_params() -> None:
 
 @respx.mock
 async def test_google_stream_emits_terminal_chunk() -> None:
-    stream_payload = "\n".join([
-        'data: {"responseId":"resp-1","candidates":[{"content":{"parts":[{"text":"hello "}]}}]}',
-        'data: {"responseId":"resp-1","candidates":[{"content":{"parts":[{"text":"world"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":9}}',
-    ])
+    stream_payload = "\n".join(
+        [
+            'data: {"responseId":"resp-1","candidates":[{"content":{"parts":[{"text":"hello "}]}}]}',
+            'data: {"responseId":"resp-1","candidates":[{"content":{"parts":[{"text":"world"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":9}}',
+        ]
+    )
     route = respx.post(
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:streamGenerateContent",
         params={"key": "g-key", "alt": "sse"},

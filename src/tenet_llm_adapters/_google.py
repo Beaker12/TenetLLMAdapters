@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
-from tenet_llm_adapters._gateway import _resolve_base_url
 from tenet_core.llm.client import (
     LLMChunk,
     LLMParams,
@@ -25,6 +24,8 @@ from tenet_core.llm.client import (
     resolve_params,
 )
 from tenet_core.prompt.formatter import format_system_prompt
+
+from tenet_llm_adapters._gateway import _resolve_base_url
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -154,30 +155,24 @@ class GoogleAdapter:
             p.temperature if p.temperature is not None else 0.0,
             p.stop_sequences,
         )
-        url = (
-            f"{self._base}/models/{model}:streamGenerateContent"
-            f"?key={self._api_key}&alt=sse"
-        )
+        url = f"{self._base}/models/{model}:streamGenerateContent?key={self._api_key}&alt=sse"
         final_reason = "stop"
         final_usage: dict[str, Any] = {}
         request_id = ""
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST", url, json=payload, timeout=120.0
-        ) as resp:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream("POST", url, json=payload, timeout=120.0) as resp,
+        ):
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line.startswith("data:"):
                     continue
                 chunk_data = json.loads(line[5:].strip())
-                request_id = (
-                    chunk_data.get("responseId")
-                    or chunk_data.get("id")
-                    or request_id
-                )
+                request_id = chunk_data.get("responseId") or chunk_data.get("id") or request_id
                 text = ""
                 candidates = chunk_data.get("candidates") or []
                 first_candidate = candidates[0] if candidates else {}
-                for part in (first_candidate.get("content", {}).get("parts", [])):
+                for part in first_candidate.get("content", {}).get("parts", []):
                     text += part.get("text", "")
                 if text:
                     yield LLMChunk(delta=text, request_id=request_id)
@@ -216,9 +211,7 @@ class GoogleAdapter:
                 if msg.content:
                     parts.append({"text": msg.content})
                 for tc in msg.tool_calls:
-                    parts.append(
-                        {"functionCall": {"name": tc.name, "args": tc.arguments}}
-                    )
+                    parts.append({"functionCall": {"name": tc.name, "args": tc.arguments}})
                 contents.append({"role": "model", "parts": parts})
             elif msg.role == "tool":
                 contents.append(

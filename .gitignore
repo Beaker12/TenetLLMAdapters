@@ -33,3 +33,7 @@ Thumbs.db
 *.war
 tmp/
 temp/
+# Hidden directories (IDE, tool caches, local state — ignored globally)
+.*/
+!.github/
+!.gitlab/

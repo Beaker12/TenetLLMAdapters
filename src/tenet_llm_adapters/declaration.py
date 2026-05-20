@@ -12,7 +12,7 @@ from __future__ import annotations
 from tenet_core.config.declarations import ModuleDeclaration, TunableDeclaration
 
 _MODULE_ID = "tenet_llm_adapters"
-_MODULE_VERSION = "1.1.0"
+_MODULE_VERSION = "1.1.0.dev0"
 
 _TUNABLES: list[TunableDeclaration] = [
     TunableDeclaration(

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-__version__ = "1.1.0"
+__version__ = "1.1.0.dev0"
 
 if TYPE_CHECKING:
     from tenet_llm_adapters._anthropic import AnthropicAdapter

@@ -1003,7 +1003,7 @@ wheels = [
 
 [[package]]
 name = "tenet-core"
-version = "1.0.0"
+version = "0.6.0.dev0"
 source = { editable = "../TenetCore" }
 dependencies = [
     { name = "mcp" },
@@ -1040,7 +1040,7 @@ provides-extras = ["cli", "bundled", "tool-servers", "skills", "in-process", "de
 
 [[package]]
 name = "tenet-llm-adapters"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +38,19 @@ class MLRouterClient:
         if not self._endpoint_url:
             return "medium"
         try:
-            import urllib.request, json as _json, asyncio
+            import asyncio
+            import json as _json
+            import urllib.request
+
             payload = _json.dumps(
-                {"text": text[:2000], "turn_number": turn_number, "prompt_char_count": prompt_char_count}
+                {
+                    "text": text[:2000],
+                    "turn_number": turn_number,
+                    "prompt_char_count": prompt_char_count,
+                }
             ).encode()
             loop = asyncio.get_event_loop()
+
             def _call() -> str:
                 req = urllib.request.Request(
                     self._endpoint_url,
@@ -54,6 +61,7 @@ class MLRouterClient:
                 with urllib.request.urlopen(req, timeout=2) as resp:
                     data = _json.loads(resp.read())
                 return data.get("predicted_label", "fallback")
+
             label = await loop.run_in_executor(None, _call)
             return _LABEL_TO_TIER.get(label, "medium")
         except Exception as exc:

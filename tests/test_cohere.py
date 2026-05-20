@@ -113,14 +113,14 @@ async def test_cohere_generate_accepts_params() -> None:
 
 @respx.mock
 async def test_cohere_stream_emits_terminal_chunk() -> None:
-    stream_payload = "\n".join([
-        '{"type":"content-delta","id":"evt-1","delta":{"message":{"content":{"text":"hello "}}}}',
-        '{"type":"content-delta","id":"evt-2","delta":{"message":{"content":{"text":"world"}}}}',
-        '{"type":"message-end","id":"evt-3","finish_reason":"COMPLETE","usage":{"billed_units":{"input_tokens":7,"output_tokens":4}}}',
-    ])
-    route = respx.post("https://api.cohere.com/v2/chat").mock(
-        return_value=Response(200, text=stream_payload)
+    stream_payload = "\n".join(
+        [
+            '{"type":"content-delta","id":"evt-1","delta":{"message":{"content":{"text":"hello "}}}}',
+            '{"type":"content-delta","id":"evt-2","delta":{"message":{"content":{"text":"world"}}}}',
+            '{"type":"message-end","id":"evt-3","finish_reason":"COMPLETE","usage":{"billed_units":{"input_tokens":7,"output_tokens":4}}}',
+        ]
     )
+    route = respx.post("https://api.cohere.com/v2/chat").mock(return_value=Response(200, text=stream_payload))
 
     adapter = CohereAdapter(api_key="c-key")
     chunks = []

@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
-from tenet_llm_adapters._gateway import _resolve_base_url
 from tenet_core.llm.client import (
     LLMChunk,
     LLMParams,
@@ -24,6 +23,8 @@ from tenet_core.llm.client import (
     ToolDef,
     resolve_params,
 )
+
+from tenet_llm_adapters._gateway import _resolve_base_url
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -166,13 +167,16 @@ class CohereAdapter:
         final_reason = "stop"
         final_usage: dict[str, Any] = {}
         request_id = ""
-        async with httpx.AsyncClient() as client, client.stream(
-            "POST",
-            url,
-            json=payload,
-            headers=self._auth_headers(),
-            timeout=120.0,
-        ) as resp:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "POST",
+                url,
+                json=payload,
+                headers=self._auth_headers(),
+                timeout=120.0,
+            ) as resp,
+        ):
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line:
@@ -183,12 +187,7 @@ class CohereAdapter:
                     continue
                 request_id = event.get("id") or request_id
                 if event.get("type") == "content-delta":
-                    text = (
-                        event.get("delta", {})
-                        .get("message", {})
-                        .get("content", {})
-                        .get("text", "")
-                    )
+                    text = event.get("delta", {}).get("message", {}).get("content", {}).get("text", "")
                     if text:
                         yield LLMChunk(delta=text, request_id=request_id)
                 finish_reason = event.get("finish_reason")
@@ -254,9 +253,7 @@ class CohereAdapter:
                             {
                                 "type": "tool_result",
                                 "tool_use_id": msg.tool_call_id or "",
-                                "content": [
-                                    {"type": "text", "text": msg.content or ""}
-                                ],
+                                "content": [{"type": "text", "text": msg.content or ""}],
                             }
                         ],
                     }

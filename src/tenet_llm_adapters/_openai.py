@@ -13,11 +13,17 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
-_OPENAI_BATCH_MODELS: frozenset[str] = frozenset({
-    "gpt-4o", "gpt-4o-2024-11-20", "gpt-4o-2024-08-06",
-    "gpt-4o-mini", "gpt-4o-mini-2024-07-18",
-    "o3-mini",
-})
+
+_OPENAI_BATCH_MODELS: frozenset[str] = frozenset(
+    {
+        "gpt-4o",
+        "gpt-4o-2024-11-20",
+        "gpt-4o-2024-08-06",
+        "gpt-4o-mini",
+        "gpt-4o-mini-2024-07-18",
+        "o3-mini",
+    }
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -25,7 +31,16 @@ if TYPE_CHECKING:
     from tenet_core.llm import DiscoveredModel
 
 import openai
-from tenet_core.llm.client import LLMChunk, LLMParams, LLMResponse, Message, ToolCall, ToolDef, resolve_params
+from tenet_core.llm.client import (
+    LLMChunk,
+    LLMParams,
+    LLMResponse,
+    Message,
+    ToolCall,
+    ToolDef,
+    resolve_params,
+)
+
 from tenet_llm_adapters._gateway import _resolve_base_url
 
 logger = logging.getLogger(__name__)
@@ -96,8 +111,8 @@ class OpenAIAdapter:
                     data = fn()
                     if isinstance(data, dict):
                         return dict(data)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("_to_plain_dict conversion failed: %s", exc)
         if hasattr(value, "__dict__"):
             data = getattr(value, "__dict__", None)
             if isinstance(data, dict):
@@ -177,11 +192,13 @@ class OpenAIAdapter:
 
         for msg in messages:
             if msg.role == "tool":
-                api_messages.append({
-                    "role": "tool",
-                    "content": msg.content,
-                    "tool_call_id": msg.tool_call_id or "",
-                })
+                api_messages.append(
+                    {
+                        "role": "tool",
+                        "content": msg.content,
+                        "tool_call_id": msg.tool_call_id or "",
+                    }
+                )
             elif msg.role == "assistant" and msg.tool_calls:
                 m: dict[str, Any] = {
                     "role": "assistant",
@@ -200,10 +217,12 @@ class OpenAIAdapter:
                 }
                 api_messages.append(m)
             else:
-                api_messages.append({
-                    "role": msg.role,
-                    "content": msg.content,
-                })
+                api_messages.append(
+                    {
+                        "role": msg.role,
+                        "content": msg.content,
+                    }
+                )
         api_messages = self._normalize_messages(api_messages)
 
         kwargs: dict[str, Any] = {
@@ -213,9 +232,19 @@ class OpenAIAdapter:
             "top_p": p.top_p,
             "n": p.n,
         }
-        # OpenAI reasoning_effort for o1/o3 models
-        if p.reasoning is not None and p.reasoning != "off":
-            kwargs["reasoning_effort"] = p.reasoning
+        if p.reasoning is not None:
+            from tenet_core.llm.models import get_model
+
+            caps = get_model(model)
+            level_body: dict | None = None
+            if caps and caps.reasoning_extra_body:
+                level_body = caps.reasoning_extra_body.get(p.reasoning)
+            if level_body is not None:
+                kwargs["extra_body"] = level_body
+            elif p.reasoning == "off" and caps and caps.reasoning_off_extra_body:
+                kwargs["extra_body"] = caps.reasoning_off_extra_body
+            elif p.reasoning != "off":
+                kwargs["reasoning_effort"] = p.reasoning
         if tools:
             kwargs["tools"] = [
                 {
@@ -235,9 +264,7 @@ class OpenAIAdapter:
 
         logger.debug("OpenAI API call: model=%s", model)
         request_client = (
-            self._client.with_options(default_headers=dict(extra_headers))
-            if extra_headers
-            else self._client
+            self._client.with_options(default_headers=dict(extra_headers)) if extra_headers else self._client
         )
         response = await request_client.chat.completions.create(**kwargs)
         return self._parse_response(response, model)
@@ -291,11 +318,13 @@ class OpenAIAdapter:
         api_messages: list[dict[str, Any]] = []
         for msg in messages:
             if msg.role == "tool":
-                api_messages.append({
-                    "role": "tool",
-                    "content": msg.content,
-                    "tool_call_id": msg.tool_call_id or "",
-                })
+                api_messages.append(
+                    {
+                        "role": "tool",
+                        "content": msg.content,
+                        "tool_call_id": msg.tool_call_id or "",
+                    }
+                )
             elif msg.role == "assistant" and msg.tool_calls:
                 m: dict[str, Any] = {
                     "role": "assistant",
@@ -314,10 +343,12 @@ class OpenAIAdapter:
                 }
                 api_messages.append(m)
             else:
-                api_messages.append({
-                    "role": msg.role,
-                    "content": msg.content,
-                })
+                api_messages.append(
+                    {
+                        "role": msg.role,
+                        "content": msg.content,
+                    }
+                )
 
         api_messages = self._normalize_messages(api_messages)
 
@@ -330,9 +361,19 @@ class OpenAIAdapter:
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        # OpenAI reasoning_effort for o1/o3 models
-        if p.reasoning is not None and p.reasoning != "off":
-            kwargs["reasoning_effort"] = p.reasoning
+        if p.reasoning is not None:
+            from tenet_core.llm.models import get_model
+
+            caps = get_model(model)
+            level_body: dict | None = None
+            if caps and caps.reasoning_extra_body:
+                level_body = caps.reasoning_extra_body.get(p.reasoning)
+            if level_body is not None:
+                kwargs["extra_body"] = level_body
+            elif p.reasoning == "off" and caps and caps.reasoning_off_extra_body:
+                kwargs["extra_body"] = caps.reasoning_off_extra_body
+            elif p.reasoning != "off":
+                kwargs["reasoning_effort"] = p.reasoning
         if tools:
             kwargs["tools"] = [
                 {
@@ -365,9 +406,7 @@ class OpenAIAdapter:
         think_end = thinking_tags[1] if thinking_tags else None
 
         request_client = (
-            self._client.with_options(default_headers=dict(extra_headers))
-            if extra_headers
-            else self._client
+            self._client.with_options(default_headers=dict(extra_headers)) if extra_headers else self._client
         )
 
         try:
@@ -430,14 +469,14 @@ class OpenAIAdapter:
                                     if end_pos > 0:
                                         yield LLMChunk(thinking_delta=remaining[:end_pos])
                                     in_thinking_tag = False
-                                    remaining = remaining[end_pos + len(think_end):]
+                                    remaining = remaining[end_pos + len(think_end) :]
                             else:
                                 start_pos = remaining.find(think_start)
                                 if start_pos == -1:
                                     # Check for partial tag at the end of the chunk.
                                     partial = _longest_suffix_prefix(remaining, think_start)
                                     if partial:
-                                        tag_buffer = remaining[len(remaining) - partial:]
+                                        tag_buffer = remaining[len(remaining) - partial :]
                                         text_part = remaining[: len(remaining) - partial]
                                     else:
                                         text_part = remaining
@@ -450,7 +489,7 @@ class OpenAIAdapter:
                                         got_content = True
                                         yield LLMChunk(delta=remaining[:start_pos])
                                     in_thinking_tag = True
-                                    remaining = remaining[start_pos + len(think_start):]
+                                    remaining = remaining[start_pos + len(think_start) :]
                     else:
                         got_content = True
                         reasoning_text = reasoning_text  # keep for fallback check
@@ -478,11 +517,7 @@ class OpenAIAdapter:
             # Fallback: model exhausted tokens during reasoning with no content yield.
             yield LLMChunk(delta=reasoning_text)
         usage = getattr(last_chunk, "usage", None) if last_chunk is not None else None
-        finish_reason = (
-            last_chunk.choices[0].finish_reason
-            if last_chunk is not None and last_chunk.choices
-            else "stop"
-        )
+        finish_reason = last_chunk.choices[0].finish_reason if last_chunk is not None and last_chunk.choices else "stop"
         reasoning_tokens = 0
         if usage:
             completion_details = getattr(usage, "completion_tokens_details", None)
@@ -526,10 +561,7 @@ class OpenAIAdapter:
         if not choices:
             payload = self._to_plain_dict(response)
             summary = json.dumps(payload, default=str)[:500] if payload else repr(response)
-            raise RuntimeError(
-                "OpenAI-compatible response did not include any choices "
-                f"for model '{model}': {summary}"
-            )
+            raise RuntimeError(f"OpenAI-compatible response did not include any choices for model '{model}': {summary}")
 
         choice = choices[0]
         msg = choice.message

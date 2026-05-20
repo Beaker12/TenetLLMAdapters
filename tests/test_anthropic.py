@@ -11,8 +11,6 @@ import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from tenet_core.llm.client import LLMParams
 
 from tenet_llm_adapters import AnthropicAdapter
@@ -80,13 +78,13 @@ async def test_generate_falls_back_to_streaming_for_long_requests() -> None:
     stream_cm.get_final_message = AsyncMock(return_value=final_message)
 
     mock_client = MagicMock()
-    mock_client.messages = MagicMock()
-    mock_client.messages.create = AsyncMock(
-        side_effect=ValueError(
-            "Streaming is required for operations that may take longer than 10 minutes."
-        )
+    # claude-sonnet-4-6 has betas so the SDK routes via client.beta.messages
+    mock_client.beta = MagicMock()
+    mock_client.beta.messages = MagicMock()
+    mock_client.beta.messages.create = AsyncMock(
+        side_effect=ValueError("Streaming is required for operations that may take longer than 10 minutes.")
     )
-    mock_client.messages.stream = MagicMock(return_value=stream_cm)
+    mock_client.beta.messages.stream = MagicMock(return_value=stream_cm)
 
     with patch("anthropic.AsyncAnthropic", return_value=mock_client):
         adapter = AnthropicAdapter(api_key="test-key")
@@ -99,8 +97,8 @@ async def test_generate_falls_back_to_streaming_for_long_requests() -> None:
     assert response.content == "streamed final response"
     assert response.input_tokens == 321
     assert response.output_tokens == 123
-    mock_client.messages.create.assert_awaited_once()
-    mock_client.messages.stream.assert_called_once()
+    mock_client.beta.messages.create.assert_awaited_once()
+    mock_client.beta.messages.stream.assert_called_once()
     stream_cm.get_final_message.assert_awaited_once()
 
 
@@ -119,8 +117,10 @@ async def test_generate_accepts_params() -> None:
     )
 
     mock_client = MagicMock()
-    mock_client.messages = MagicMock()
-    mock_client.messages.create = AsyncMock(return_value=response_obj)
+    # claude-sonnet-4-6 has betas so the SDK routes via client.beta.messages
+    mock_client.beta = MagicMock()
+    mock_client.beta.messages = MagicMock()
+    mock_client.beta.messages.create = AsyncMock(return_value=response_obj)
 
     with patch("anthropic.AsyncAnthropic", return_value=mock_client):
         adapter = AnthropicAdapter(api_key="test-key")
@@ -132,7 +132,7 @@ async def test_generate_accepts_params() -> None:
     )
 
     assert result.content == "ok"
-    kwargs = mock_client.messages.create.await_args.kwargs
+    kwargs = mock_client.beta.messages.create.await_args.kwargs
     assert kwargs["temperature"] == 0.2
     assert kwargs["stop_sequences"] == ["END"]
 
@@ -203,8 +203,10 @@ async def test_stream_accepts_event_type_content_block_delta_variant() -> None:
     ]
 
     mock_client = MagicMock()
-    mock_client.messages = MagicMock()
-    mock_client.messages.stream = MagicMock(return_value=stream_cm)
+    # claude-sonnet-4-6 has betas so the SDK routes via client.beta.messages
+    mock_client.beta = MagicMock()
+    mock_client.beta.messages = MagicMock()
+    mock_client.beta.messages.stream = MagicMock(return_value=stream_cm)
 
     with patch("anthropic.AsyncAnthropic", return_value=mock_client):
         adapter = AnthropicAdapter(api_key="test-key")
@@ -219,4 +221,3 @@ async def test_stream_accepts_event_type_content_block_delta_variant() -> None:
     assert chunks[0].delta == "hello "
     assert chunks[1].delta == "world"
     assert chunks[-1].stop_reason == "end_turn"
-

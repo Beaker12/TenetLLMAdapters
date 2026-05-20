@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Mark version as development pre-release (`1.1.0.dev0`); no functional changes.
+- **`.gitignore` hidden-directory ignore pattern** (`.gitignore`) — Added `.*/` glob to suppress hidden directories (IDE state, tool caches, local config) from version control, with `!.github/` and `!.gitlab/` negations to preserve essential tracked directories.
+
+### Fixed
+
+- **Anthropic SDK ≥0.50 `betas` kwarg compatibility** (`_anthropic.py`) — The Anthropic Python SDK ≥0.50 only accepts the `betas=` keyword argument on `client.beta.messages`, not on `client.messages`. All three call sites (`_generate_via_messages_api`, `_generate_via_streaming_api`, and `stream`) now select `self._client.beta.messages` when the request carries betas, and `self._client.messages` otherwise. Previously this raised an `APIError` for any request that triggered model-beta headers (e.g. extended thinking with `interleaved-thinking-2025-05-14`).
+- **Per-level `reasoning_extra_body` dispatch in OpenAI adapter** (`_openai.py`) — When `LLMParams.reasoning` is set, the adapter now resolves the appropriate `extra_body` in three stages: (1) look up the level in `ModelCapabilities.reasoning_extra_body` (per-level map); (2) fall back to `reasoning_off_extra_body` when the level is `"off"`; (3) fall back to setting `reasoning_effort` for non-`"off"` standard OpenAI models. Previously only `"off"` triggered the `reasoning_off_extra_body` lookup and all other levels unconditionally set `reasoning_effort`, breaking local inference servers (llama.cpp, vLLM) that require model-specific `extra_body` flags for reasoning control. Applied to both non-streaming and streaming call paths (`messages_create` and `messages_stream`).
+
 ### Added
 
 - **LLM gateway routing support** (`_gateway.py` new file, `_anthropic.py`, `_openai.py`, `_google.py`, `_cohere.py`):

@@ -17,7 +17,6 @@ from urllib.parse import urlparse
 
 import anthropic
 import httpx
-from tenet_llm_adapters._gateway import _resolve_base_url
 from tenet_core.llm.client import (
     LLMChunk,
     LLMParams,
@@ -28,14 +27,18 @@ from tenet_core.llm.client import (
     resolve_params,
 )
 
-_ANTHROPIC_BATCH_MODELS: frozenset[str] = frozenset({
-    "claude-3-7-sonnet-20250219",
-    "claude-3-5-sonnet-20241022",
-    "claude-3-5-haiku-20241022",
-    "claude-3-opus-20240229",
-    "claude-3-sonnet-20240229",
-    "claude-3-haiku-20240307",
-})
+from tenet_llm_adapters._gateway import _resolve_base_url
+
+_ANTHROPIC_BATCH_MODELS: frozenset[str] = frozenset(
+    {
+        "claude-3-7-sonnet-20250219",
+        "claude-3-5-sonnet-20241022",
+        "claude-3-5-haiku-20241022",
+        "claude-3-opus-20240229",
+        "claude-3-sonnet-20240229",
+        "claude-3-haiku-20240307",
+    }
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -63,9 +66,7 @@ def get_model_betas(model_id: str) -> list[str]:
     return []
 
 
-_LONG_REQUEST_STREAMING_ERROR = (
-    "Streaming is required for operations that may take longer than 10 minutes."
-)
+_LONG_REQUEST_STREAMING_ERROR = "Streaming is required for operations that may take longer than 10 minutes."
 
 _DEFAULT_MAX_TOKENS = 4096
 
@@ -74,11 +75,12 @@ def _resolve_max_tokens(model: str) -> int:
     """Return max_tokens for *model* from the registry, or a safe default."""
     try:
         from tenet_core.llm.models import get_model  # noqa: PLC0415
+
         caps = get_model(model)
         if caps is not None and int(getattr(caps, "max_output_tokens", 0) or 0) > 0:
             return int(caps.max_output_tokens)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Model capability lookup failed, using default max_tokens: %s", exc)
     return _DEFAULT_MAX_TOKENS
 
 
@@ -151,8 +153,8 @@ class AnthropicAdapter:
                     data = fn()
                     if isinstance(data, dict):
                         return dict(data)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("_to_plain_dict conversion failed: %s", exc)
         if hasattr(value, "__dict__"):
             data = getattr(value, "__dict__", None)
             if isinstance(data, dict):
@@ -234,9 +236,7 @@ class AnthropicAdapter:
             temperature=temperature,
             stop_sequences=stop_sequences,
         )
-        system_prompt, api_messages, api_tools = self._build_api_payload(
-            messages, tools
-        )
+        system_prompt, api_messages, api_tools = self._build_api_payload(messages, tools)
 
         kwargs: dict[str, Any] = {
             "model": model,
@@ -255,8 +255,10 @@ class AnthropicAdapter:
             kwargs["betas"] = betas
 
         logger.debug("Anthropic API call: model=%s max_tokens=%d", model, kwargs["max_tokens"])
+        # SDK >=0.50: betas kwarg is only accepted by client.beta.messages, not client.messages
+        msg_api = self._client.beta.messages if kwargs.get("betas") else self._client.messages
         try:
-            response = await self._client.messages.create(**kwargs)
+            response = await msg_api.create(**kwargs)
         except ValueError as exc:
             if _LONG_REQUEST_STREAMING_ERROR not in str(exc):
                 raise
@@ -269,7 +271,8 @@ class AnthropicAdapter:
 
     async def _generate_via_streaming_api(self, **kwargs: Any) -> Any:
         """Execute a request via Anthropic streaming and return the final message."""
-        async with self._client.messages.stream(**kwargs) as stream:
+        msg_api = self._client.beta.messages if kwargs.get("betas") else self._client.messages
+        async with msg_api.stream(**kwargs) as stream:
             return await stream.get_final_message()
 
     def stream(
@@ -307,9 +310,7 @@ class AnthropicAdapter:
             temperature=temperature,
             stop_sequences=stop_sequences,
         )
-        system_prompt, api_messages, api_tools = self._build_api_payload(
-            messages, tools
-        )
+        system_prompt, api_messages, api_tools = self._build_api_payload(messages, tools)
 
         kwargs: dict[str, Any] = {
             "model": model,
@@ -327,16 +328,20 @@ class AnthropicAdapter:
         if betas:
             kwargs["betas"] = betas
 
-        logger.debug("Anthropic streaming call: model=%s max_tokens=%d", model, kwargs["max_tokens"])
+        logger.debug(
+            "Anthropic streaming call: model=%s max_tokens=%d",
+            model,
+            kwargs["max_tokens"],
+        )
         streamed_text_parts: list[str] = []
         streamed_thinking_parts: list[str] = []
-        async with self._client.messages.stream(**kwargs) as stream:
+        msg_api = self._client.beta.messages if kwargs.get("betas") else self._client.messages
+        async with msg_api.stream(**kwargs) as stream:
             async for event in stream:
                 event_type_name = type(event).__name__
                 event_type = str(getattr(event, "type", "") or "")
-                is_content_block_delta = (
-                    event_type == "content_block_delta"
-                    or event_type_name.endswith("ContentBlockDeltaEvent")
+                is_content_block_delta = event_type == "content_block_delta" or event_type_name.endswith(
+                    "ContentBlockDeltaEvent"
                 )
 
                 if is_content_block_delta:
@@ -397,9 +402,7 @@ class AnthropicAdapter:
         tools: list[ToolDef] | None = None,
     ) -> int:
         """Count tokens server-side via Anthropic Token Counting API."""
-        system_prompt, api_messages, api_tools = self._build_api_payload(
-            messages, tools
-        )
+        system_prompt, api_messages, api_tools = self._build_api_payload(messages, tools)
 
         kwargs: dict[str, Any] = {
             "model": model,
@@ -453,10 +456,12 @@ class AnthropicAdapter:
                     )
                 api_messages.append({"role": "assistant", "content": content})
             else:
-                api_messages.append({
-                    "role": msg.role,
-                    "content": msg.content,
-                })
+                api_messages.append(
+                    {
+                        "role": msg.role,
+                        "content": msg.content,
+                    }
+                )
 
         api_tools: list[dict[str, Any]] = []
         if tools:

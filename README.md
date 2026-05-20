@@ -6,6 +6,9 @@
 
 Cloud LLM adapter integrations for the Tenet platform. Provides Anthropic, OpenAI-compatible, Google Gemini, and Cohere adapters, all registered via the `tenet.llm_adapters` entry-point group and implementing the TenetCore `LLMAdapter` and `LLMDiscovery` protocols.
 
+> Part of the [Tenet Platform](https://tenet.tools)
+
+
 ## Platform Context
 
 - **Requirements:** [SRS_TENETLLMADAPTERS](../TenetEGRF/docs/requirements/components/SRS_TENETLLMADAPTERS.md)
